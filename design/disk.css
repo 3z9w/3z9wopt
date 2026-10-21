@@ -1,0 +1,213 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   磁盘空间页 · 独立样式（design/disk.css）
+   ---------------------------------------------------------------------------
+   功能与交互是从老版本（v2）100% 移植过来的，样式按 1.1 的视觉语言重写：
+   玻璃卡 + --sp-grad 品牌渐变 + 描边，颜色全走主文件主题变量，深浅色都跟着走。
+   行网格是**唯一出处**：表头 .sp-thead 与数据行 .sp-row 共用 .sp-cols，
+   改列宽只改这一处，两边自动对齐（分开写必然错位）。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ .page 是 flex 列容器（min-height:100%）：这几块必须显式 flex:0 0 auto，
+   否则高度不够时它们会被**压缩**（实测：内容区被压成 41px、里面的按钮
+   getBoundingClientRect 全是 0 —— 看着就是"按钮不见了/点了没反应"，
+   跟 opt.css / uninst.css 里同样的写法）。 */
+.sp-drives,.sp-stats,.sp-seg{flex:0 0 auto}
+.sp-body{flex:0 0 auto;min-width:0}
+
+/* ── 1 磁盘卡 ─────────────────────────────────────────────────────────── */
+.sp-drives{display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:10px;margin-bottom:12px}
+.sp-drive{
+  position:relative;text-align:left;padding:12px 15px;border-radius:var(--r1);cursor:pointer;
+  background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  border:1px solid var(--stroke);box-shadow:var(--sh1);transition:.18s;
+}
+.sp-drive:hover:not(.off){transform:translateY(-2px);border-color:var(--stroke-2);box-shadow:var(--sh2)}
+/* 选中 = 玻璃底 + 蓝描边 + 一圈柔光 —— 跟本机配置的 Tab 胶囊同一套语言：
+   强调只靠「蓝」，不铺渐变面（2026-10-11 用户定：配色向本机配置页看齐）。 */
+.sp-drive.on{border-color:var(--info);background:var(--glass-hi);box-shadow:0 0 0 3px var(--glow)}
+.sp-drive.on:hover{border-color:var(--info);box-shadow:0 0 0 3px var(--glow),var(--sh2)}
+.sp-drive.off{opacity:.5;cursor:not-allowed}
+.sp-drive-top{display:flex;align-items:baseline;gap:8px}
+.sp-drive-top b{font-size:19px;font-weight:700;letter-spacing:-.01em;color:var(--tx1)}
+.sp-drive.on .sp-drive-top b{color:var(--info)}
+.sp-drive-top span{font-size:12.5px;color:var(--tx2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-drive-top i{font-style:normal;font-size:12.5px;font-weight:650;color:var(--info);font-variant-numeric:tabular-nums}
+.sp-drive-bar{height:6px;border-radius:4px;margin:9px 0 8px;overflow:hidden;background:var(--glass-hi)}
+.sp-drive-bar span{display:block;height:100%;border-radius:4px;background:var(--info);transition:width .5s}
+.sp-drive-sub{font-size:11.5px;color:var(--tx3);font-variant-numeric:tabular-nums}
+
+/* ── 2 概览四卡 ───────────────────────────────────────────────────────── */
+.sp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:10px;margin-bottom:12px}
+.sp-card{
+  padding:11px 15px;border-radius:var(--r2);
+  background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  border:1px solid var(--stroke);
+}
+.sp-card .l{font-size:11.5px;color:var(--tx3)}
+.sp-card .v{font-size:19px;font-weight:680;margin-top:2px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.sp-card .s{font-size:11px;color:var(--tx3);margin-top:2px}
+
+/* ── 3 三个视图的 Tab（目录分析 / 大文件 / 重复文件）───────────────────── */
+.sp-seg{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.sp-tab{
+  flex:0 0 auto;height:34px;padding:0 15px;border-radius:var(--r2);cursor:pointer;
+  display:flex;align-items:center;gap:7px;font:inherit;font-size:13px;color:var(--tx2);
+  background:var(--glass-sink);border:1px solid var(--stroke);transition:.18s;
+}
+.sp-tab:hover{color:var(--tx1);background:var(--glass-hi)}
+.sp-tab.on{color:var(--info);font-weight:650;background:var(--glass-hi);border-color:var(--stroke-2);box-shadow:var(--sh1)}
+
+/* ── 4 工具条（面包屑 / 阈值选择 / 视图切换）────────────────────────────── */
+.sp-crumb-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:11px}
+.sp-crumb{
+  padding:5px 11px;border-radius:var(--r3);border:1px solid transparent;background:transparent;
+  font:inherit;font-size:12.5px;color:var(--tx2);cursor:pointer;transition:.15s;
+}
+.sp-crumb:hover{background:var(--glass-hi);color:var(--tx1)}
+.sp-crumb.cur{background:var(--glass-sink);border-color:var(--stroke);font-weight:620;color:var(--tx1)}
+.sp-crumb-sep{color:var(--tx3);opacity:.6}
+.sp-viewseg{display:inline-flex;padding:3px;border-radius:10px;background:var(--glass-sink);border:1px solid var(--stroke);gap:2px}
+.sp-viewseg button{
+  padding:4px 13px;border-radius:7px;border:0;background:transparent;
+  font:inherit;font-size:12px;color:var(--tx2);cursor:pointer;transition:.15s;
+}
+.sp-viewseg button.on{color:var(--info);font-weight:650;background:var(--glass-hi);box-shadow:var(--sh1)}
+.sp-minsel{font-size:12.5px;color:var(--tx2);display:flex;align-items:center;gap:8px}
+.sp-minsel select{
+  padding:5px 9px;border-radius:8px;font:inherit;font-size:12.5px;
+  border:1px solid var(--stroke-2);background:var(--glass-sink);color:var(--tx1);
+}
+.sp-minsel select:focus{outline:0;border-color:var(--info);box-shadow:0 0 0 3px var(--glow)}
+
+/* ── 5 列表（目录分析 / 大文件共用网格）────────────────────────────────── */
+/* 名称 | 占比 | 大小 | 修改时间 | 操作 */
+.sp-cols{display:grid;grid-template-columns:minmax(0,2.6fr) minmax(0,1fr) 118px 104px 84px;gap:10px;align-items:center}
+.sp-tbl{
+  border-radius:var(--r1);border:1px solid var(--stroke);background:var(--glass-sink);
+  overflow:hidden;box-shadow:var(--sh1);
+}
+.sp-thead{
+  padding:9px 14px;border-bottom:1px solid var(--stroke);font-size:11.5px;color:var(--tx3);
+  background:linear-gradient(120deg,var(--glass-hi),transparent);
+}
+.sp-thead [data-sort]{cursor:pointer;user-select:none;transition:.15s}
+.sp-thead [data-sort]:hover{color:var(--tx1)}
+.sp-thead [data-sort].on{color:var(--info);font-weight:650}
+.sp-thead .num,.sp-row .num{text-align:right}
+.sp-row{
+  padding:8px 14px;border-bottom:1px solid var(--stroke);
+  font-size:12.5px;color:var(--tx2);transition:background .15s;
+  animation:sp-row-in .22s var(--e1) backwards;
+}
+.sp-row:hover{background:var(--glass-hi)}
+.sp-row:last-child{border-bottom:0}
+@keyframes sp-row-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+html[data-motion="off"] .sp-row{animation:none}
+.sp-name{display:flex;align-items:center;gap:8px;min-width:0;color:var(--info)}
+.sp-name svg{flex:0 0 auto}
+.sp-nm{font-size:13px;color:var(--tx1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-nm.isdir{cursor:pointer;font-weight:600}
+.sp-nm.isdir:hover{color:var(--info);text-decoration:underline;text-underline-offset:3px}
+.sp-name.wide{flex-direction:column;align-items:flex-start;gap:2px}
+.sp-name.wide .sp-tag{align-self:flex-start}
+.sp-path{
+  font-style:normal;font-size:11px;color:var(--tx3);max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.sp-bar{height:8px;border-radius:5px;background:var(--glass-hi);border:1px solid var(--stroke);overflow:hidden}
+.sp-bar span{display:block;height:100%;border-radius:5px;background:var(--info);transition:width .4s}
+.sp-bar span.file{background:var(--ok)}
+.sp-row .sz{font-size:12.5px;font-weight:640;color:var(--tx1);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sp-row .sz i{display:block;font-style:normal;font-size:11px;font-weight:400;color:var(--tx3)}
+.sp-row .tm{font-size:11.5px;color:var(--tx3);white-space:nowrap;font-variant-numeric:tabular-nums}
+.sp-row .acts{display:flex;gap:4px;justify-content:flex-end}
+.sp-act{
+  display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+  border-radius:8px;border:1px solid transparent;background:transparent;color:var(--tx3);
+  cursor:pointer;transition:.15s;
+}
+.sp-act:hover{color:var(--info);background:var(--glass-hi);border-color:var(--stroke-2)}
+.sp-act.danger:hover{color:var(--danger);border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
+.sp-more{
+  width:100%;padding:10px;border:0;background:transparent;color:var(--info);
+  font:inherit;font-size:12.5px;cursor:pointer;
+}
+.sp-more:hover{background:var(--glass-hi)}
+.sp-norow{padding:28px;text-align:center;color:var(--tx3);font-size:12.5px}
+
+/* 风险标签：禁删 / 可删 / 勿手删（悬停看说明，见 spHint） */
+.sp-tag{
+  flex:0 0 auto;font-style:normal;font-size:10px;font-weight:700;line-height:1;
+  padding:3px 7px;border-radius:7px;letter-spacing:.4px;white-space:nowrap;
+}
+.sp-tag.t-red{background:rgba(251,113,133,.16);color:var(--danger)}
+.sp-tag.t-grn{background:rgba(52,211,153,.16);color:var(--ok)}
+.sp-tag.t-amb{background:rgba(251,191,36,.16);color:var(--warn)}
+
+/* ── 6 矩形图（squarified treemap）───────────────────────────────────── */
+.sp-mapcard{padding:10px}
+.sp-mapcard canvas{width:100%;border-radius:var(--r2);cursor:pointer;display:block}
+.sp-map-hint{font-size:11.5px;color:var(--tx3);text-align:center;padding:8px 0 3px}
+
+/* ── 7 空态 / 扫描中 ─────────────────────────────────────────────────── */
+.sp-empty{text-align:center;padding:44px 20px}
+.sp-empty h3{font-size:14.5px;font-weight:640;margin-bottom:7px}
+.sp-empty .ph-ico{color:var(--info);margin-bottom:12px}
+.sp-empty p{font-size:12.5px;color:var(--tx3);line-height:1.7}
+.sp-scan-ring{
+  width:92px;height:92px;margin:0 auto 15px;border-radius:50%;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  background:conic-gradient(var(--info) calc(var(--p,0) * 1%), var(--glass-hi) 0);
+  animation:sp-pulse 1.4s ease-in-out infinite;
+}
+.sp-scan-ring::before{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--bg1)}
+html[data-theme="light"] .sp-scan-ring::before{background:#fff}
+.sp-scan-ring span{position:relative;font-size:19px;font-weight:700;color:var(--info);font-variant-numeric:tabular-nums}
+@keyframes sp-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.04)}}
+html[data-motion="off"] .sp-scan-ring{animation:none}
+.sp-pct-bar{height:8px;border-radius:5px;background:var(--glass-hi);overflow:hidden;max-width:420px;margin:14px auto 0}
+.sp-pct-bar span{display:block;height:100%;background:var(--info);border-radius:5px;transition:width .3s}
+
+/* ── 8 重复文件 ──────────────────────────────────────────────────────── */
+.sp-dup-sum{
+  padding:11px 15px;margin-bottom:11px;border-radius:var(--r2);font-size:12.5px;color:var(--tx2);
+  border:1px solid rgba(96,165,250,.32);background:rgba(96,165,250,.10);
+}
+.sp-dup-sum b{color:var(--info);font-weight:680;font-variant-numeric:tabular-nums}
+.sp-hint2{color:var(--tx3);font-size:11.5px;margin-left:8px}
+.sp-dupcard{padding:16px 18px;text-align:center}
+.sp-dup-prog{max-width:480px;margin:0 auto;text-align:center;font-size:12.5px;color:var(--tx2)}
+.sp-dup-prog .sp-pct-bar{margin-top:8px}
+.sp-dupgroup{margin-bottom:11px;padding:12px 15px}
+.sp-dupg-head{
+  display:flex;align-items:center;gap:12px;padding-bottom:8px;margin-bottom:6px;
+  border-bottom:1px solid var(--stroke);
+}
+.sp-dupg-head .sz{font-weight:680;font-size:13.5px;color:var(--tx1);font-variant-numeric:tabular-nums}
+.sp-dupg-head .freed{font-size:12px;color:var(--ok);font-weight:600;font-variant-numeric:tabular-nums}
+.sp-duppath{display:flex;align-items:center;gap:9px;padding:7px 6px;border-radius:8px;cursor:pointer;transition:background .12s}
+.sp-duppath:hover{background:var(--glass-hi)}
+.sp-duppath input{width:15px;height:15px;flex:0 0 auto;accent-color:var(--info)}
+.sp-duppath .tag{
+  flex:0 0 auto;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:650;
+  background:var(--glass-hi);color:var(--info);
+}
+.sp-duppath.keep .tag{background:rgba(52,211,153,.16);color:var(--ok)}
+.sp-duppath .p{
+  flex:1;min-width:0;font-size:12px;color:var(--tx2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;
+}
+.sp-duppath .sp-act{width:26px;height:26px;flex:0 0 auto}
+
+/* ── 9 删除确认弹窗里的说明条 ────────────────────────────────────────── */
+.sp-del-note{
+  padding:11px 13px;border-radius:var(--r2);margin:6px 0 4px;font-size:12.5px;color:var(--tx2);
+  background:rgba(96,165,250,.10);border:1px solid rgba(96,165,250,.32);
+}
+.sp-del-note b{color:var(--tx1);font-weight:640}
+
+@media(max-width:1180px){
+  .sp-cols{grid-template-columns:minmax(0,2fr) minmax(0,1fr) 104px 80px 78px}
+  .sp-row .tm{display:none}
+  .sp-thead .num[data-sort="mtime"],.sp-thead span:nth-child(4){display:none}
+}

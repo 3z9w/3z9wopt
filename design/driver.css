@@ -1,0 +1,175 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   驱动管理 · 独立样式（design/driver.css）
+   ---------------------------------------------------------------------------
+   功能口径照老版本（v2 驱动管理）：选系统 → 按类别看驱动 → 勾选导出 / 添加驱动；
+   本页**不做删除**（老版本也是这么定的：删错关键驱动会开不了机，真要删去设备管理器）。
+   视觉按 1.1 重写：玻璃卡 + 蓝为主（配色基准 = 本机配置页），琥珀只留给风险提示条。
+   ⚠️ .page 是 flex 列容器：页面顶层块必须显式 flex:0 0 auto，否则被压缩成 0 高
+   （本机配置 / 磁盘 / 启动项都踩过：按钮矩形变 0×0，看着像"按钮没了 / 点了没反应"）。
+   ══════════════════════════════════════════════════════════════════════════ */
+.drv-hero,.drv-bar,.drv-tip,.drv-prog,.drv-foot{flex:0 0 auto}
+
+/* ── 1 hero：一句话说明 + 三个 KPI（总览还在，但不占多少高度）──────────────── */
+.drv-hero{
+  position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:14px;padding:12px 16px;
+  border-radius:var(--r1);margin-bottom:11px;border:1px solid var(--stroke);
+  background:
+    radial-gradient(520px 190px at 2% -60%, rgba(61,107,245,.15), transparent 60%),
+    radial-gradient(420px 180px at 98% 160%, rgba(34,211,238,.10), transparent 60%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  box-shadow:var(--sh1);
+}
+.drv-hero-ico{
+  width:38px;height:38px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--info);
+  background:linear-gradient(140deg,rgba(61,107,245,.17),rgba(34,211,238,.06));
+  border:1px solid rgba(61,107,245,.2);
+}
+.drv-hero-main{flex:1 1 240px;min-width:0}
+.drv-hero-t{font-size:13px;font-weight:650;color:var(--tx1)}
+.drv-hero-d{font-size:11.5px;color:var(--tx3);line-height:1.55;margin-top:2px}
+.drv-hero-d b{color:var(--tx2);font-weight:640}
+.drv-kpis{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.drv-kpi{
+  min-width:76px;padding:5px 11px;border-radius:9px;text-align:center;
+  background:var(--glass-hi);border:1px solid var(--stroke-2);
+}
+.drv-kpi span{display:block;font-size:10.5px;color:var(--tx3)}
+.drv-kpi b{display:block;font-size:17px;font-weight:700;color:var(--tx1);
+  line-height:1.3;font-variant-numeric:tabular-nums}
+/* 有勾选时只改描边与字色（基准配色：glass-hi 底 + info 蓝字） */
+.drv-kpi.on{border-color:var(--info)}
+.drv-kpi.on b{color:var(--info)}
+
+/* 本页不整页滚动：树区自己滚，底部操作栏常驻可见（对齐 Dism++ 的布局）。
+   `.page` 是全站公用容器（min-height:100%），只在这个含驱动树的页面改高度；
+   老 WebView2 不认 :has() 时规则自动失效 → 退回原来的整页滚动，版面不会坏。 */
+.page:has(> .drv-tree){height:100%;min-height:0;overflow:hidden}
+
+/* ── 2 系统条：系统选择 + 右上角「显示内置驱动」/ 重新枚举 ────────────────────────────────────── */
+.drv-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 12px;border-radius:var(--r1);margin-bottom:11px;
+  border:1px solid var(--stroke);background:var(--glass);box-shadow:var(--sh1);
+}
+.drv-syswrap{display:flex;align-items:center;gap:7px;min-width:0;flex:1 1 320px}
+.drv-syswrap .lb{display:flex;align-items:center;gap:5px;color:var(--tx3);font-size:12px;flex:0 0 auto}
+/* 下拉别把整行吃掉：右邻的「检测到 N 个 Windows」提示会被挤成省略号（实测） */
+.drv-syswrap select{
+  flex:0 1 460px;min-width:190px;max-width:100%;
+  height:30px;padding:0 8px;font-size:12.5px;color:var(--tx1);
+  background:var(--glass-hi);border:1px solid var(--stroke-2);border-radius:8px;
+  outline:none;cursor:pointer;
+}
+.drv-syswrap select:focus{border-color:var(--info)}
+.drv-syshint{flex:0 0 auto;font-size:11.5px;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drv-acts{display:flex;align-items:center;gap:8px;margin-left:auto}
+.drv-chkall{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--tx2);cursor:pointer;user-select:none}
+.drv-chkall input{width:15px;height:15px;accent-color:var(--info);cursor:pointer}
+
+/* 按钮：本机配置那套（主按钮 = 蓝，次按钮 = 玻璃），不用渐变铺满 */
+.drv-btn{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;
+  font-size:12.5px;font-weight:600;border-radius:8px;cursor:pointer;white-space:nowrap;
+  border:1px solid var(--stroke-2);background:var(--glass-hi);color:var(--tx1);
+  transition:background .16s var(--e1),border-color .16s var(--e1),color .16s var(--e1);
+}
+.drv-btn:hover{background:var(--glass);border-color:var(--info);color:var(--info)}
+.drv-btn.pri{background:var(--info);border-color:var(--info);color:#fff}
+.drv-btn.pri:hover{filter:brightness(1.08);color:#fff}
+.drv-btn[disabled]{opacity:.5;cursor:not-allowed}
+.drv-btn[disabled]:hover{background:var(--glass-hi);border-color:var(--stroke-2);color:var(--tx1)}
+.drv-btn.pri[disabled]:hover{background:var(--info);border-color:var(--info);color:#fff}
+
+/* ── 5 底部操作栏（对齐 Dism++：左「全选」，右 导出驱动 / 添加驱动）────────── */
+.drv-foot{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-top:11px;padding:9px 12px;border-radius:var(--r1);
+  border:1px solid var(--stroke);background:var(--glass);box-shadow:var(--sh1);
+}
+.drv-foot .sp{flex:1 1 auto}
+
+/* ── 3 风险提示条（琥珀，全站唯一允许铺琥珀的地方）───────────────────────── */
+.drv-tip{
+  display:flex;align-items:flex-start;gap:8px;padding:9px 13px;margin-bottom:11px;
+  border-radius:var(--r1);font-size:12px;line-height:1.6;color:var(--tx2);
+  background:linear-gradient(120deg,rgba(245,158,11,.11),rgba(245,158,11,.04));
+  border:1px solid rgba(245,158,11,.26);
+}
+.drv-tip svg{flex:0 0 auto;margin-top:1px;color:var(--warn)}
+.drv-tip a{color:var(--info);font-weight:640;cursor:pointer;text-decoration:underline dotted}
+
+/* ── 4 导出进度（默认收起，进行时展开）──────────────────────────────────── */
+.drv-prog{
+  display:none;margin-bottom:11px;padding:10px 13px;border-radius:var(--r1);
+  border:1px solid var(--stroke);background:var(--glass);box-shadow:var(--sh1);
+}
+.drv-prog.on{display:block}
+.drv-prog-txt{font-size:12.5px;color:var(--tx1);margin-bottom:7px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drv-prog-bar{height:6px;border-radius:99px;background:var(--stroke);overflow:hidden}
+.drv-prog-bar i{display:block;height:100%;width:0;border-radius:99px;background:var(--info);
+  transition:width .3s var(--e1)}
+.drv-prog-bar i.indet{width:38%;animation:drvIndet 1.1s var(--e1) infinite}
+@keyframes drvIndet{0%{margin-left:-38%}100%{margin-left:100%}}
+
+/* ── 6 树 ───────────────────────────────────────────────────────────────── */
+/* 树区吃掉剩余高度并自己滚动：驱动多则上百项，不滚会把下面的东西顶出可视区 */
+.drv-tree{flex:1 1 auto;min-height:0;overflow:auto;padding-right:2px}
+.drv-node{margin-bottom:6px;border-radius:var(--r1);border:1px solid var(--stroke);
+  background:var(--glass);box-shadow:var(--sh1);overflow:hidden}
+.drv-node-h{
+  display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;
+  transition:background .16s var(--e1);
+}
+.drv-node-h:hover{background:var(--glass-hi)}
+.drv-caret{flex:0 0 auto;display:grid;place-items:center;color:var(--tx3);
+  transition:transform .18s var(--e1)}
+.drv-node.open .drv-caret{transform:rotate(90deg);color:var(--info)}
+.drv-node-h input[type=checkbox]{width:15px;height:15px;accent-color:var(--info);cursor:pointer;flex:0 0 auto}
+.drv-cat{font-size:12.5px;font-weight:650;color:var(--tx1);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drv-node-h i{
+  flex:0 0 auto;min-width:20px;text-align:center;font-style:normal;font-size:11px;font-weight:700;
+  padding:1px 6px;border-radius:99px;background:var(--glass-hi);color:var(--tx3);
+  border:1px solid var(--stroke-2);
+}
+.drv-node.open > .drv-node-h i{background:rgba(96,165,250,.14);color:var(--info);border-color:rgba(96,165,250,.3)}
+.drv-kids{display:none;border-top:1px solid var(--stroke)}
+.drv-node.open > .drv-kids{display:block}
+.drv-line{
+  display:flex;align-items:center;gap:8px;padding:7px 12px 7px 34px;
+  border-bottom:1px solid var(--stroke);
+}
+.drv-line:last-child{border-bottom:0}
+.drv-line:hover{background:var(--glass-hi)}
+.drv-line input[type=checkbox]{width:15px;height:15px;accent-color:var(--info);cursor:pointer;flex:0 0 auto}
+.drv-line .nm{flex:0 1 auto;min-width:0;max-width:38%;font-size:12.5px;color:var(--tx1);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drv-line .prov{flex:0 1 auto;min-width:0;font-size:11.5px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drv-line .sp{flex:1 1 auto}
+.drv-chip{
+  flex:0 0 auto;font-size:10.5px;padding:1px 7px;border-radius:6px;
+  background:var(--glass-hi);color:var(--tx3);border:1px solid var(--stroke-2);white-space:nowrap;
+}
+.drv-chip.oem{font-family:ui-monospace,Consolas,monospace}
+.drv-chip.in{background:rgba(96,165,250,.12);color:var(--info);border-color:rgba(96,165,250,.28)}
+
+/* ── 7 空态 / 载入态 ─────────────────────────────────────────────────────── */
+.drv-empty{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;
+  padding:52px 20px;text-align:center;color:var(--tx3);font-size:12.5px;
+  border-radius:var(--r1);border:1px dashed var(--stroke-2);background:var(--glass);
+}
+.drv-empty svg{color:var(--tx3)}
+.drv-empty.err svg{color:var(--danger)}
+.drv-empty .t{font-size:13px;font-weight:640;color:var(--tx2)}
+.drv-busy{opacity:.5;pointer-events:none}
+
+/* 窄屏：统计三列换行，操作条纵向排 */
+@media (max-width:1080px){
+  .drv-hero-d{display:none}
+  .drv-line .nm{max-width:none}
+}

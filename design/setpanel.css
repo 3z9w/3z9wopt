@@ -1,0 +1,67 @@
+/* ── 设置面板（design/setpanel.css，2026-10-13 从主文件拆出来）──
+   左侧一列卡片式 tab，右侧面板高度**写死**（--set-h）：
+     ① 五个面板一样高，切 tab 时弹窗不跳；
+     ② 内容再长也只在面板里滚，底部「关闭」永远在同一位置。
+
+   ⚠️ .modal-box 没有 max-height（项目铁律：弹窗内容区自己限高），
+   不套 .set-scroll 这层，1020×660 的机器上底部按钮会被顶出屏幕点不到。 */
+.modal-box.setbox{--set-h:min(56vh,452px);width:min(880px,94vw);padding:16px 18px 12px}
+.set-box-t{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.set-box-sub{margin-left:auto;font-size:12px;color:var(--tx3);font-weight:400;
+  display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* 固定高度：给的是 height 不是 max-height —— 面板空着也占这么高，切 tab 不抖 */
+.set-scroll{height:var(--set-h);overflow:auto;margin:0 -8px 6px;padding:0 8px}
+/* 装不下时给底部一道淡出，让"下面还有"看得出来 */
+.set-scroll.set-more{-webkit-mask-image:linear-gradient(#000 calc(100% - 16px),transparent);
+  mask-image:linear-gradient(#000 calc(100% - 16px),transparent)}
+.buttonlike{appearance:none;font:inherit}
+
+/* 左 tab + 右面板。导航是一整条底槽，选中那一张浮起来成卡片：
+   --bg1 底 + --stroke-2 描边 + 微阴影 + 左侧一道蓝竖条。
+   比原来「只换个底色」更像 tab，扫一眼就知道切到哪了。
+   ⚠️ 别给导航加 position:sticky —— 滚的是右栏里的 .set-scroll，导航不该跟着动。 */
+.set-shell{display:grid;grid-template-columns:158px minmax(0,1fr);gap:12px;align-items:stretch}
+@media(max-width:780px){.set-shell{grid-template-columns:minmax(0,1fr)}}
+.set-nav{display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:12px;
+  background:var(--glass-sink);border:1px solid var(--stroke)}
+.set-nav-i{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;
+  border:1px solid transparent;background:transparent;color:var(--tx2);font:inherit;font-size:12.5px;
+  text-align:left;border-radius:9px;cursor:pointer;line-height:1.3;
+  transition:background .14s var(--e1),color .14s var(--e1),border-color .14s var(--e1)}
+.set-nav-i:hover{background:var(--glass-hi);color:var(--tx1)}
+.set-nav-i.on{background:var(--bg1);border-color:var(--stroke-2);color:var(--info);font-weight:650;
+  box-shadow:0 1px 4px rgba(9,13,26,.10),inset 2px 0 0 var(--info)}
+.set-nav-i svg{flex:0 0 auto;width:14px;height:14px;opacity:.85}
+.set-nav-i.on svg{color:var(--info);opacity:1}
+.set-nav-i.dot::after{content:"";flex:0 0 auto;width:6px;height:6px;border-radius:50%;
+  background:var(--info);margin-left:auto}
+/* 版本号贴在导航条最底下：margin-top:auto 把它压到槽底，不占面板空间 */
+.set-nav-ver{margin-top:auto;padding-top:9px;font-size:11px;color:var(--tx3);text-align:center;line-height:1.5}
+.set-pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+/* 反馈面板：渠道一行一个入口，图标统一蓝色，不铺大色块（配色规范） */
+.fb-grp{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--tx3);padding:10px 0 0}
+.fb-row{display:flex;align-items:center;gap:14px;padding:11px 0;
+  border-top:1px solid var(--stroke);margin-top:6px}
+.fb-ico{width:32px;height:32px;flex:0 0 32px;border-radius:10px;display:flex;
+  align-items:center;justify-content:center;background:var(--glass-hi);
+  border:1px solid var(--stroke-2);color:var(--info)}
+.fb-tx{flex:1;min-width:0}
+.fb-tx-t{font-size:13.5px;font-weight:520}
+.fb-tx-d{font-size:11.5px;color:var(--tx3);margin-top:2px;line-height:1.4}
+.fb-act{flex:0 0 auto;display:flex;gap:6px}
+
+/* 软件更新（检查 / 下载 / 自动替换）：状态一律写清楚是"查到了什么"还是"没查到" */
+.upd-line{font-size:12.5px;line-height:1.6}
+.upd-ok{color:var(--ok)} .upd-new{color:var(--info);font-weight:600} .upd-bad{color:var(--warn)}
+.upd-box{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--glass-sink);border:1px solid var(--stroke)}
+.upd-notes{font-size:12px;color:var(--tx2);line-height:1.75;margin:6px 0 0;padding-left:17px}
+.upd-notes li{margin:2px 0}
+.upd-bar{height:6px;border-radius:3px;background:var(--glass-hi);overflow:hidden;margin-top:9px}
+.upd-bar > i{display:block;height:100%;width:0;background:var(--info);transition:width .18s linear}
+.upd-meta{font-size:11.5px;color:var(--tx3);margin-top:7px;font-variant-numeric:tabular-nums}
+/* 校验结果：三色边一句话，别用大色块（配色规范：大面积只允许品牌蓝） */
+.vf-res{margin-top:8px;padding:8px 10px;border-radius:9px;font-size:12px;line-height:1.6;
+  border:1px solid var(--stroke);background:var(--glass-sink);color:var(--tx2)}
+.vf-res.ok{border-color:rgba(52,211,153,.42)}
+.vf-res.bad{border-color:rgba(251,191,36,.42)}
+.vf-res b{color:var(--tx1)}

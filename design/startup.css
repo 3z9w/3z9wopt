@@ -1,0 +1,250 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   启动项管理 · 独立样式（design/startup.css）
+   ---------------------------------------------------------------------------
+   功能与交互 100% 来自老版本（v2 的启动项管理 2.0：引导卡 + 一键优化 + 三分类
+   + 可排序表头 + 行菜单 + 优化记录 / 忽略区），视觉按 1.1 重写：玻璃卡 + 蓝为主，
+   橙红只用在「该动手的那一行」上（配色基准 = 本机配置页，2026-10-11 用户定案）。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ⚠️ .page 是 flex 列容器：页面顶层块必须显式 flex:0 0 auto，否则高度不够时被
+   **压缩**（实测内容区被压成 41px、里面的按钮 getBoundingClientRect 全是 0 ——
+   看着就是"按钮不见了 / 点了没反应"，跟 disk.css / opt.css 同一个坑）。 */
+.su-guide,.su-bar,.su-list{flex:0 0 auto}
+
+/* ── 1 引导卡（说清「开关影响什么」，不是给结论）───────────────────────── */
+.su-guide{
+  position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:16px;padding:14px 18px;
+  border-radius:var(--r1);margin-bottom:11px;border:1px solid var(--stroke);
+  background:
+    radial-gradient(560px 200px at 3% -55%, rgba(61,107,245,.16), transparent 60%),
+    radial-gradient(440px 190px at 97% 150%, rgba(34,211,238,.11), transparent 60%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  box-shadow:var(--sh1);
+}
+.su-guide-ico{
+  width:42px;height:42px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--info);
+  background:linear-gradient(140deg,rgba(61,107,245,.17),rgba(34,211,238,.06));
+  border:1px solid rgba(61,107,245,.2);
+}
+.su-guide-main{flex:1 1 240px;min-width:0}
+/* 三条要点：三个竖线分区，不做卡片（做成卡片就是「又一大块」）。
+   2026-10-12 引导卡标题整行删掉后，这里就是引导卡的全部内容，所以不再留 9px 上间距，
+   靠 .su-guide 的 align-items:center 垂直居中即可。 */
+.su-guide-grid{list-style:none;margin:0;padding:0;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 14px}
+.su-guide-grid li{position:relative;padding-left:11px;border-left:2px solid var(--stroke-2);
+  transition:border-color .2s var(--e1)}
+.su-guide-grid li:hover{border-left-color:var(--info)}
+.su-guide-grid .k{display:block;font-size:10.5px;font-weight:700;color:var(--info);letter-spacing:.4px}
+.su-guide-grid .v{display:block;font-size:11.5px;color:var(--tx3);line-height:1.5}
+.su-guide-act{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.su-cta-hint{font-size:11px;color:var(--tx3);line-height:1.4;white-space:nowrap}
+.su-cta-hint.hot{color:var(--warn);font-weight:700}
+/* 有事才高亮成橙红（唯一一个警示色，其余一律蓝）：平时是安静的玻璃按钮 */
+.btn.su-cta.hot{background:linear-gradient(135deg,#fb923c,#ef4444);color:#fff;border-color:transparent;
+  box-shadow:0 4px 14px rgba(239,68,68,.3)}
+.btn.su-cta.hot:hover:not(:disabled){filter:brightness(1.06);color:#fff}
+.btn.su-cta.hot svg{color:#fff}
+.btn.su-cta b{font-size:11.5px;padding:1px 8px;border-radius:20px;font-variant-numeric:tabular-nums;
+  background:var(--glass-hi)}
+.btn.su-cta.hot b{background:rgba(255,255,255,.26)}
+.btn.su-cta.muted b{display:none}
+
+/* ── 2 工具条卡（分类分段 + 工具按钮同一张卡）─────────────────────────── */
+.su-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:11px;flex-wrap:wrap}
+.su-seg{display:inline-flex;padding:3px;border-radius:10px;gap:2px;
+  background:var(--glass);border:1px solid var(--stroke);flex:0 0 auto}
+.su-seg button{
+  border:0;background:transparent;font:inherit;font-size:12.5px;color:var(--tx3);
+  padding:6px 11px;border-radius:7px;cursor:pointer;display:flex;align-items:center;gap:6px;
+  white-space:nowrap;transition:.16s;
+}
+.su-seg button:hover{color:var(--tx1);background:var(--glass-hi)}
+/* 选中 = 玻璃胶囊 + 蓝字（本机配置那套，不铺渐变） */
+.su-seg button.on{color:var(--info);font-weight:650;background:var(--glass-hi);box-shadow:var(--sh1)}
+.su-seg button .n{font-size:10.5px;font-weight:650;padding:1px 6px;border-radius:20px;
+  background:var(--glass-hi);color:var(--tx3);font-variant-numeric:tabular-nums}
+.su-seg button.on .n{background:rgba(96,165,250,.16);color:var(--info)}
+/* 这一类没读到时角标显示 !（不是 0 —— 0 意味着"这台机本来没有"，那是谎报） */
+.su-seg button .n.bad{background:rgba(251,113,133,.18);color:var(--danger)}
+/* 右侧这五个是「辅助操作」，不是分类 —— 比左边的分段标签小一号、色调收一档，
+   并用一条竖线隔开。2026-10-19 用户反馈：原来和「启动项 / 服务项 / 计划任务」
+   一样大，看着像六个平级选项，分不清哪个是筛分类、哪个是点动作。 */
+.su-bar-act{margin-left:auto;display:flex;align-items:center;gap:4px;flex-wrap:wrap;
+  padding-left:13px;border-left:1px solid var(--stroke-2)}
+.su-bar-act .btn.sm{height:22px;padding:0 7px;font-size:11.5px;font-weight:500;border-radius:6px;
+  gap:4px;color:var(--tx2)}
+.su-bar-act .btn.sm:hover:not(:disabled){color:var(--tx1)}
+.su-bar-act .btn.sm svg{width:12px;height:12px;flex:0 0 auto}
+.su-bar-act .btn.sm input{width:12px;height:12px;accent-color:var(--info);cursor:pointer}
+/* 工具按钮角标（重新扫描 / 优化记录 / 忽略区 上的计数） */
+.su-bar .btn b{font-size:10.5px;padding:0 5px;line-height:15px;border-radius:20px;
+  font-variant-numeric:tabular-nums;background:var(--glass-hi);color:var(--tx2)}
+.su-bar .btn.busy svg{animation:suSpin .8s linear infinite}
+.su-bar .btn.busy{opacity:.72;pointer-events:none}
+
+/* ── 3 列表（表头 + 行）──────────────────────────────────────────────── */
+.su-list{border-radius:var(--r1);border:1px solid var(--stroke);background:var(--glass-sink);
+  box-shadow:var(--sh1);overflow:hidden;padding:4px 10px}
+.su-head{display:flex;align-items:center;gap:12px;padding:6px 10px 8px;
+  border-bottom:1px solid var(--stroke-2)}
+.su-h{border:0;background:transparent;font:inherit;font-size:11.5px;font-weight:650;
+  color:var(--tx3);cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px;
+  white-space:nowrap;transition:.15s}
+.su-h:hover{color:var(--tx1)}
+.su-h.on{color:var(--info)}
+.su-h.on::after{content:"↑";font-size:10px;line-height:1}
+.su-h-name{flex:1;min-width:0}
+.su-h-adv{width:92px;flex:0 0 auto}
+.su-h-state{width:78px;flex:0 0 auto}
+/* 占位：让表头与行的「图标 / 开关 / 更多」三列对齐 */
+.su-head .su-hico{flex:0 0 auto;height:1px}
+.su-head .su-hico:nth-of-type(1){width:38px}
+.su-head .su-hico:nth-of-type(2){width:40px}
+.su-head .su-hico:nth-of-type(3){width:28px}
+
+.su-row{display:flex;align-items:center;gap:12px;padding:9px 10px;
+  border-bottom:1px solid var(--stroke);position:relative;transition:background .12s;
+  animation:suRowIn .22s var(--e1) backwards}
+.su-row:last-child{border-bottom:0}
+.su-row:hover{background:var(--glass-hi)}
+@keyframes suRowIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+html[data-motion="off"] .su-row{animation:none}
+/* 该动手的行：左侧红条 + 淡红底，扫一眼就知道重点在哪 */
+.su-row.su-hot{background:linear-gradient(90deg,rgba(239,68,68,.08),rgba(239,68,68,0) 62%)}
+.su-row.su-hot::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;
+  border-radius:0 3px 3px 0;background:var(--danger)}
+.su-row.su-hot:hover{background:linear-gradient(90deg,rgba(239,68,68,.13),rgba(239,68,68,0) 62%)}
+
+.su-ico{width:38px;height:38px;flex:0 0 auto;border-radius:9px;overflow:hidden;
+  display:grid;place-items:center;background:var(--glass-hi);border:1px solid var(--stroke)}
+.su-ico img{width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .2s}
+.su-ico img.in{opacity:1}
+.su-ico svg{color:var(--tx3)}
+/* 取不到图标时的首字母头像：每一项都得有图标，不然列表看着断断续续 */
+.fb-l{width:100%;height:100%;border-radius:9px;display:grid;place-items:center;
+  font-size:15px;font-weight:800}
+.su-main{flex:1;min-width:0}
+.su-nm{font-size:13px;font-weight:640;color:var(--tx1);display:flex;align-items:center;gap:8px;overflow:hidden}
+.su-nmt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.su-sub{font-size:11.5px;color:var(--tx3);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 「保持现状」也要说清为什么保留：只给开关不给理由，新手不知道该不该关 */
+.su-why{display:flex;align-items:center;gap:5px;margin-top:3px;font-size:11px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.su-why svg{flex:0 0 auto;color:var(--ok)}
+.su-why span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.su-tag{flex:0 0 auto;font-style:normal;font-size:10px;font-weight:700;line-height:1;
+  padding:3px 7px;border-radius:7px;letter-spacing:.4px;white-space:nowrap}
+.su-tag.sys{background:rgba(96,165,250,.12);color:var(--info)}
+.su-tag.kind{background:rgba(96,165,250,.12);color:var(--info)}
+.su-adv{width:92px;flex:0 0 auto;display:flex;align-items:center}
+.su-adv .b{font-size:11px;font-weight:700;padding:4px 9px;border-radius:8px;line-height:1;
+  white-space:nowrap;cursor:help}
+.su-adv .b.no{background:var(--glass-hi);color:var(--tx3)}
+.su-adv .b.yes{background:rgba(251,113,133,.16);color:var(--danger)}
+/* 建议删除（火绒 recommend_delete / invalid）：比「建议禁止」更重一档，走琥珀色不与红色混淆 */
+.su-adv .b.del{background:rgba(251,191,36,.18);color:var(--warn,#f59e0b)}
+.su-state{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx3);
+  width:78px;flex:0 0 auto}
+.su-state i{width:8px;height:8px;border-radius:50%;background:var(--stroke-2);flex:0 0 auto}
+.su-state.on{color:var(--ok);font-weight:600}
+.su-state.on i{background:var(--ok);box-shadow:0 0 0 3px rgba(52,211,153,.16)}
+/* 开关：原生 checkbox（键盘可达），样式按 1.1 的开关尺寸画 */
+.su-switch{position:relative;width:40px;height:23px;flex:0 0 auto;cursor:pointer}
+.su-switch input{opacity:0;position:absolute;width:0;height:0}
+.su-switch span{position:absolute;inset:0;border-radius:20px;background:var(--glass-sink);
+  border:1px solid var(--stroke-2);transition:.2s}
+.su-switch span::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;
+  border-radius:50%;background:var(--tx2);transition:.2s}
+.su-switch input:checked + span{background:var(--info);border-color:transparent}
+.su-switch input:checked + span::after{transform:translateX(17px);background:#fff}
+.su-switch input:disabled + span{opacity:.5}
+.su-more{width:28px;height:28px;flex:0 0 auto;border-radius:8px;border:1px solid transparent;
+  background:transparent;color:var(--tx3);cursor:pointer;font:inherit;font-size:17px;font-weight:700;
+  line-height:1;display:grid;place-items:center;transition:.15s}
+.su-more:hover{color:var(--info);background:var(--glass-hi);border-color:var(--stroke-2)}
+
+/* ── 4 载入中 / 空态 ─────────────────────────────────────────────────── */
+.su-loading{display:flex;align-items:center;gap:10px;padding:30px;justify-content:center;
+  color:var(--tx2);font-size:13px}
+.su-spin{width:16px;height:16px;border-radius:50%;border:2.5px solid var(--stroke-2);
+  border-top-color:var(--info);animation:suSpin .8s linear infinite;flex:0 0 auto}
+@keyframes suSpin{to{transform:rotate(360deg)}}
+html[data-motion="off"] .su-spin{animation:none}
+.su-norow{padding:26px;text-align:center;color:var(--tx3);font-size:12.5px}
+.su-norow.bad{display:flex;align-items:flex-start;justify-content:center;gap:10px;
+  color:var(--danger);text-align:left;line-height:1.7}
+.su-norow.bad svg{flex:0 0 auto;margin-top:2px}
+/* 非管理员提示条：不先说清"服务项改不动"，用户拨开关只会看到一句报错 */
+.su-tipbar{flex:0 0 auto;display:flex;align-items:center;gap:9px;margin-bottom:10px;padding:10px 14px;
+  border-radius:12px;border:1px solid rgba(251,191,36,.34);background:rgba(251,191,36,.10);
+  color:var(--tx2);font-size:12px;line-height:1.55}
+.su-tipbar svg{flex:0 0 auto;color:#fbbf24}
+.su-tipbar b{color:var(--tx1);font-weight:650}
+
+/* ── 5 行内菜单（打开所在位置 / 复制命令行 / 忽略）──────────────────────── */
+.su-menu{position:fixed;z-index:320;min-width:200px;background:var(--bg1);
+  border:1px solid var(--stroke-2);border-radius:12px;box-shadow:var(--sh3);padding:5px}
+.su-menu button{display:block;width:100%;text-align:left;padding:8px 12px;border:0;
+  background:transparent;border-radius:8px;font:inherit;font-size:13px;color:var(--tx1);cursor:pointer}
+.su-menu button:hover:not(:disabled){background:var(--glass-hi);color:var(--info)}
+.su-menu button:disabled{opacity:.4;cursor:not-allowed}
+.su-menu-cmd{font-size:11px;color:var(--tx3);padding:6px 12px 4px;border-top:1px solid var(--stroke);
+  margin-top:4px;word-break:break-all;max-width:320px;max-height:64px;overflow:hidden}
+
+/* ── 6 弹窗内（优化记录 / 忽略区 / 一键优化 / 完成）────────────────────── */
+/* ⚠️ 两个坑都踩过，别再改回去：
+   ① 这一行必须用 grid，不能用 flex：状态胶囊 flex-basis:auto 会按内容撑宽，
+      实测被拉成 316px（本该 44px），把「类型 / 名称 / 按钮」整段挤出弹窗右边
+      （优化记录弹窗曾出现"时间 + 一根长红条，后面全看不见"）。
+   ② 胶囊的类名**不能叫 `.act`**：主文件里 `.act{display:grid;grid-template-columns:300px 1fr}`
+      是首页行动卡在用的全局类，撞名后那条 300px 列直接套到胶囊上 —— 就是 316px 的真凶。
+      独立模块里起类名先 grep 一遍主文件，短名一律加 `su-` 前缀。（现名 `.su-op`） */
+.su-loglist{max-height:320px;overflow:auto;padding:2px 4px;margin:12px 0}
+.su-logrow{display:grid;grid-template-columns:132px 52px 60px minmax(0,1fr) auto;align-items:center;
+  gap:10px;padding:8px;border-bottom:1px solid var(--stroke);font-size:12.5px}
+.su-logrow:last-child{border-bottom:0}
+.su-logrow .t{color:var(--tx3);font-size:11.5px;font-variant-numeric:tabular-nums}
+.su-logrow .su-op{justify-self:start;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.su-logrow .su-op.d{background:rgba(251,113,133,.16);color:var(--danger)}
+.su-logrow .su-op.e{background:rgba(52,211,153,.16);color:var(--ok)}
+.su-logrow .k{color:var(--tx3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.su-logrow .n{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx1)}
+/* 忽略区的行只有「类型 / 名称 / 按钮」三段，单独给一套列宽（别让名称被挤到第 4 列） */
+.su-logrow.ign{grid-template-columns:60px minmax(0,1fr) auto}
+.su-log-top{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:2px 4px 10px;font-size:12.5px;color:var(--tx3)}
+.su-optlist{max-height:300px;overflow:auto;border:1px solid var(--stroke);border-radius:var(--r2);
+  padding:2px 6px;margin:12px 0}
+.su-optrow{display:flex;align-items:center;gap:12px;padding:9px 8px;
+  border-bottom:1px solid var(--stroke);cursor:pointer;border-radius:10px}
+.su-optrow:last-child{border-bottom:0}
+.su-optrow:hover{background:var(--glass-hi)}
+.su-optrow input{width:16px;height:16px;accent-color:var(--info);flex:0 0 auto}
+.su-optrow .su-ico{width:34px;height:34px}
+.su-optbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.su-optbar span{font-size:12.5px;color:var(--tx3)}
+.su-prog{height:10px;border-radius:6px;background:var(--glass-hi);overflow:hidden;margin:12px 0 8px}
+.su-prog-b{height:100%;border-radius:6px;background:var(--info);transition:width .25s}
+.su-prog-t{text-align:center;font-size:12.5px;color:var(--tx3)}
+.su-done{text-align:center;padding:14px 6px 6px}
+.su-done-ico{width:56px;height:56px;margin:0 auto 13px;border-radius:50%;display:grid;place-items:center;
+  background:rgba(52,211,153,.14);border:1px solid rgba(52,211,153,.3);color:var(--ok)}
+.su-done h3{font-size:16px;margin-bottom:8px}
+.su-done p{font-size:12.5px;color:var(--tx3);line-height:1.7;margin-bottom:16px}
+
+/* ── 7 窄屏：要点三栏改单列、工具按钮换行 ─────────────────────────────── */
+/* 工具按钮单独一条断点：默认窗口（1220）下五个按钮正好放得下一行，
+   再窄一点就整组换行 —— 换行后竖线会被甩到行首，所以改成横线分隔。 */
+@media (max-width:1160px){
+  .su-bar-act{margin-left:0;flex:1 1 100%;padding-left:0;border-left:0;
+    padding-top:7px;border-top:1px solid var(--stroke)}
+}
+@media (max-width:1080px){
+  .su-guide{flex-wrap:wrap}
+  .su-guide-grid{grid-template-columns:1fr}
+  .su-row .su-adv,.su-head .su-h-adv{display:none}
+}

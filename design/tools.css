@@ -1,0 +1,216 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   工具库页样式（design/tools.css）· 2026-10-12 第二版
+   版面：一页卡片墙（分类横排页签 + 分组卡片）+ 运行时才弹的终端窗口。
+   页面**不再给输出留常驻地盘** —— 输出只在弹窗里，所以整页可以自然滚动，
+   不用再算 "100vh - 356px" 那种高度预算（第一版就是被这个预算卡死的）。
+   ⚠️ .page 是 min-height:100% 的 flex 列容器 —— 顶层块一律 flex:0 0 auto，
+      否则会被压扁；卡片墙自然增高，由 #content 滚动。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 hero：一句话说明 + 右侧 KPI（照蓝屏/驱动页那一套，配色基准 = 本机配置页） ── */
+.tk-hero,.tk-tabs,.tk-reboot,.tk-mini,.tk-wall{flex:0 0 auto}
+.tk-hero{
+  position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:14px;padding:12px 16px;
+  border-radius:var(--r1);margin-bottom:11px;border:1px solid var(--stroke);
+  background:
+    radial-gradient(520px 190px at 2% -60%, rgba(61,107,245,.15), transparent 60%),
+    radial-gradient(420px 180px at 98% 160%, rgba(34,211,238,.10), transparent 60%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  box-shadow:var(--sh1);
+}
+.tk-hero-ico{
+  width:38px;height:38px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--info);
+  background:linear-gradient(140deg,rgba(61,107,245,.17),rgba(34,211,238,.06));
+  border:1px solid rgba(61,107,245,.2);
+}
+.tk-hero-main{flex:1 1 240px;min-width:0}
+.tk-hero-t{font-size:13px;font-weight:650;color:var(--tx1)}
+.tk-hero-d{font-size:11.5px;color:var(--tx3);line-height:1.55;margin-top:2px}
+.tk-hero-d b{color:var(--tx2);font-weight:640}
+.tk-kpis{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.tk-kpi{
+  min-width:76px;padding:5px 11px;border-radius:9px;text-align:center;
+  background:var(--glass-hi);border:1px solid var(--stroke-2);
+}
+.tk-kpi span{display:block;font-size:10.5px;color:var(--tx3)}
+.tk-kpi b{display:block;font-size:17px;font-weight:700;color:var(--tx1);line-height:1.3;
+  font-variant-numeric:tabular-nums}
+
+/* ── 分类页签（横排一级，取代原来的左侧竖列表） ─────────────────────────── */
+.tk-tabs{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.tk-reload{margin-left:auto;display:flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
+  cursor:pointer;border:1px solid var(--stroke);background:transparent;color:var(--tx3);font-size:12px}
+.tk-reload:hover{background:var(--glass);color:var(--tx1);border-color:var(--stroke-2)}
+.tk-tab{display:flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--stroke);background:transparent;color:var(--tx2);font-size:12.5px}
+.tk-tab:hover{background:var(--glass);border-color:var(--stroke-2)}
+.tk-tab.on{background:var(--glass-hi);border-color:var(--stroke-2);color:var(--info)}
+.tk-tab-c{font-size:11px;color:var(--tx3);font-variant-numeric:tabular-nums}
+.tk-tab.on .tk-tab-c{color:var(--info)}
+
+/* ── 待重启提醒条 ───────────────────────────────────────────────────────── */
+.tk-reboot{display:flex;gap:8px;align-items:center;flex:0 0 auto;margin-bottom:12px;
+  padding:9px 12px;border-radius:var(--r3);font-size:12px;line-height:1.6;
+  background:rgba(251,191,36,.09);border:1px solid rgba(251,191,36,.24);color:var(--warn)}
+.tk-reboot b{font-weight:650}
+
+/* ── 卡片墙 ─────────────────────────────────────────────────────────────── */
+.tk-wall{flex:0 0 auto;display:flex;flex-direction:column;gap:18px}
+.tk-grp-h{display:flex;align-items:center;gap:8px;margin-bottom:9px;font-size:12.5px;color:var(--tx2)}
+.tk-grp-h b{font-weight:650;font-size:13px;color:var(--tx1)}
+.tk-grp-h span{font-size:11px;color:var(--tx3)}
+.tk-grp-d{margin-left:2px;padding-left:9px;border-left:1px solid var(--stroke);line-height:1.4}
+/* 一组只有 2~7 个工具，卡片放大一点、间距拉开，别挤成一片 */
+.tk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:12px}
+
+.tk-card{display:flex;flex-direction:column;gap:6px;padding:12px 13px;border-radius:var(--r3);
+  border:1px solid var(--stroke);background:var(--glass);cursor:pointer;min-height:116px}
+.tk-card:hover{background:var(--glass-hi);border-color:var(--stroke-2)}
+/* 标题一行放不下就折行（不截断）：flex 行必须允许 wrap，否则 b 会被压出省略号 */
+.tk-c-t{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.tk-c-t b{flex:1 1 auto;min-width:0;font-size:13px;font-weight:650;color:var(--tx1);
+  line-height:1.45;white-space:normal;overflow-wrap:break-word;word-break:break-word}
+.tk-c-d{font-size:11.5px;line-height:1.6;color:var(--tx3);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tk-c-f{margin-top:auto;display:flex;align-items:center;gap:8px}
+.tk-c-cmd{flex:1 1 auto;min-width:0;font-family:ui-monospace,Consolas,monospace;font-size:10.5px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-c-run{flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:4px 11px;cursor:pointer;
+  border-radius:var(--r3);border:1px solid var(--stroke-2);background:var(--glass-hi);
+  color:var(--info);font-size:12px;line-height:1.5}
+.tk-c-run:hover{background:var(--info);border-color:var(--info);color:#fff}
+
+.tk-b{font-style:normal;font-size:10px;line-height:1;padding:2px 5px;border-radius:var(--r4);
+  background:var(--glass-sink);color:var(--tx3);white-space:nowrap}
+.tk-b.rec{background:rgba(251,191,36,.14);color:var(--warn);font-weight:700}
+.tk-none{padding:26px 16px;text-align:center;font-size:12.5px;color:var(--tx3);line-height:1.7}
+
+/* ── 运行中状态条（窗口最小化后留的入口） ────────────────────────────────
+   ⚠️ 不要写成 position:fixed：#content 有 backdrop-filter，会给 fixed 造包含块，
+      结果是"浮层"跑到内容区左下角、压住卡片（实测截图是这样）。页内流式最稳。 */
+.tk-mini{display:flex;align-items:center;gap:10px;flex:0 0 auto;margin-bottom:12px;
+  padding:9px 12px;border-radius:var(--r3);font-size:12.5px;color:var(--tx2);
+  background:var(--glass-hi);border:1px solid var(--stroke-2)}
+.tk-mini b{color:var(--tx1);font-weight:650}
+.tk-mini .tk-mini-a{margin-left:auto;display:flex;gap:6px;flex:0 0 auto}
+
+/* ── 终端窗口（弹窗） ───────────────────────────────────────────────────── */
+/* 主文件 .modal-box 默认 470px；终端窗口要宽一点。⚠️ 关闭时必须撤掉 data-term
+   （tkCloseTerm / 点遮罩都撤），否则别的弹窗会沿用这个宽版。 */
+/* ⚠️ max-height 不能省：主文件 .modal-box 没限高，窗口内容一多就顶出视口，
+   连顶部的「关闭」都被裁到屏幕外（探针实测：点关闭落在遮罩上，窗口关不掉）。
+   结构 = 头/脚固定 + 中间 .tk-tm-b 自己滚。 */
+.modal-box[data-term="1"]{width:min(760px,94vw);max-height:92vh;display:flex;flex-direction:column;padding:18px 20px}
+.tk-tm{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:11px}
+.tk-tm-b{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:11px}
+.tk-tm-h{flex:0 0 auto;display:flex;align-items:flex-start;gap:11px}
+.tk-tm-ico{flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:var(--glass-hi);border:1px solid var(--stroke-2);color:var(--info)}
+.tk-tm-hm{flex:1 1 auto;min-width:0}
+.tk-tm-t{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:15px;font-weight:660;color:var(--tx1)}
+.tk-tm-c{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:11.5px;color:var(--tx3)}
+.tk-tm-c code{font-family:ui-monospace,Consolas,monospace;font-size:11px;padding:2px 6px;border-radius:5px;
+  background:var(--glass-sink);color:var(--tx2);word-break:break-all}
+.tk-x{flex:0 0 auto;padding:4px 10px;border-radius:var(--r3);cursor:pointer;
+  border:1px solid var(--stroke);background:transparent;color:var(--tx2);font-size:12px}
+.tk-x:hover{background:var(--glass);color:var(--tx1)}
+.tk-tm-d{font-size:12.5px;line-height:1.7;color:var(--tx2)}
+
+.tk-dsec{margin:4px 0 6px;font-size:11.5px;color:var(--tx3);letter-spacing:.03em}
+.tk-dim2{font-size:11.5px;color:var(--tx3);line-height:1.6}
+.tk-dim2q{margin-left:6px;font-size:11.5px;color:var(--tx3)}
+.tk-req{margin-left:6px;color:var(--danger)}
+.tk-note{display:flex;gap:8px;padding:9px 11px;border-radius:var(--r3);
+  background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.22);
+  color:var(--warn);font-size:12px;line-height:1.65}
+.tk-note span{flex:1 1 auto;min-width:0}
+.tk-act{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
+.tk-act-h{font-size:11.5px;color:var(--tx3)}
+.tk-sd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tk-min{width:92px;flex:0 0 auto}
+.tk-tm .inp{width:100%}
+.tk-tm .tk-sd .inp{width:auto}
+
+/* 输出 */
+.tk-tm-o{border:1px solid var(--stroke);border-radius:var(--r3);overflow:hidden;display:flex;flex-direction:column}
+.tk-o-h{display:flex;align-items:center;gap:8px;flex:0 0 auto;padding:7px 11px;
+  background:var(--glass);font-size:11.5px;color:var(--tx2)}
+.tk-o-r{font-size:11.5px}
+.tk-o-r.ok{color:var(--ok)}
+.tk-o-r.warn{color:var(--warn)}
+.tk-o-a{margin-left:auto;display:flex;gap:6px;flex:0 0 auto}
+.tk-out{height:min(34vh,300px);min-height:150px;overflow:auto;padding:9px 11px;
+  background:var(--glass-sink);font-family:ui-monospace,Consolas,monospace;
+  font-size:11.5px;line-height:1.75;white-space:pre-wrap;word-break:break-all}
+.tk-l{color:var(--tx2)}
+.tk-l.k-err{color:var(--danger)}
+.tk-l.k-ok{color:var(--ok)}
+.tk-l.k-head{color:var(--info)}
+.tk-l.k-warn{color:var(--warn)}
+.tk-l.k-dim{color:var(--tx3)}
+
+/* 窗口底部 */
+.tk-tm-f{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.tk-tm-f .sp{margin-left:auto;display:flex;gap:6px}
+.tk-act-s{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--info)}
+.tk-cfbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:var(--r3);
+  background:rgba(251,113,133,.09);border:1px solid rgba(251,113,133,.28);
+  font-size:12px;line-height:1.6;color:var(--tx2)}
+.tk-cfbar span:first-of-type{flex:1 1 auto;min-width:0}
+.tk-cfbar .sp{margin-left:auto;display:flex;gap:8px;flex:0 0 auto}
+.btn.sm.primary.danger{background:rgba(251,113,133,.16);border-color:rgba(251,113,133,.38);color:var(--danger)}
+.btn.sm.primary.danger:hover{background:rgba(251,113,133,.26)}
+
+/* 网络修复面板 */
+.tk-net{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tk-net-b{display:flex;flex-direction:column;gap:3px;text-align:left;padding:9px 11px;cursor:pointer;
+  border-radius:var(--r3);border:1px solid var(--stroke);background:var(--glass)}
+.tk-net-b:hover{background:var(--glass-hi);border-color:var(--stroke-2)}
+.tk-net-b b{font-size:12.5px;font-weight:650;color:var(--tx1)}
+.tk-net-b span{font-size:11px;line-height:1.5;color:var(--tx3)}
+.tk-net-b.all{grid-column:1/-1;background:var(--glass-hi);border-color:var(--stroke-2)}
+.tk-net-b.all b{color:var(--info)}
+.tk-kv{display:flex;gap:22px;flex-wrap:wrap}
+.tk-kv div{display:flex;flex-direction:column;gap:2px}
+.tk-kv span{font-size:11px;color:var(--tx3)}
+.tk-kv b{font-size:13px;font-weight:650;color:var(--tx1);word-break:break-all}
+
+/* 补丁表格 */
+.tk-upd{border:1px solid var(--stroke);border-radius:var(--r3);overflow:hidden}
+.tk-upd-h,.tk-upd-r{display:grid;grid-template-columns:130px 110px 1fr;gap:8px;padding:7px 10px;align-items:center}
+.tk-upd-h{background:var(--glass);font-size:11px;color:var(--tx3)}
+.tk-upd-r{border-top:1px solid var(--stroke)}
+.tk-upd-k{font-size:12.5px;font-weight:650;color:var(--tx1);word-break:break-all}
+.tk-upd-d{font-size:12px;color:var(--tx2)}
+.tk-upd-a{text-align:right}
+.tk-upd-t{grid-column:1/-1;font-size:11px;color:var(--tx3);padding:0 10px 7px;line-height:1.5}
+
+/* 窄屏：卡片收窄，不要把页签挤成多行高塔 */
+@media(max-width:1080px){
+  .tk-grid{grid-template-columns:repeat(auto-fill,minmax(168px,1fr))}
+  .tk-net{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* ── 对症排查（2026-10-13 从「快速排查」独立页搬进工具库页顶部）──
+   默认收起一条，展开后才是症状卡。放在 hero 与分类页签之间。 */
+.tk-flow{margin:12px 0 14px;background:var(--card);border:1px solid var(--stroke);border-radius:var(--r1);overflow:hidden}
+.tk-flow-h{display:flex;align-items:center;gap:9px;padding:11px 14px;cursor:pointer;user-select:none}
+.tk-flow-h:hover{background:var(--glass)}
+.tk-flow-ico{width:26px;height:26px;flex:0 0 26px;display:grid;place-items:center;border-radius:8px;
+  background:var(--glass);color:var(--info)}
+.tk-flow-h b{font-size:13.5px;font-weight:650}
+.tk-flow-n{font-size:11.5px;color:var(--tx3)}
+.tk-flow-x{font-size:11.5px;color:var(--tx3);flex:0 0 auto}
+.tk-flow-b{padding:0 14px 12px;border-top:1px solid var(--stroke);padding-top:10px}
+.tk-flow-err{font-size:12.5px;color:var(--tx2);margin-bottom:8px;line-height:1.6}
+.tk-flow-i{border:1px solid var(--stroke);border-radius:12px;margin-bottom:8px;overflow:hidden}
+.tk-flow-t{display:flex;align-items:center;gap:9px;padding:9px 11px}
+.tk-flow-t.hasact{cursor:pointer}
+.tk-flow-t:hover{background:var(--glass)}
+.tk-flow-t b{font-size:13px;font-weight:600}
+.tk-flow-s{padding:2px 12px 11px}
+.tk-flow-step{display:flex;gap:9px;font-size:12.5px;color:var(--tx2);line-height:1.7;margin-bottom:5px}
+.tk-flow-step span:first-child{flex:0 0 16px;color:var(--tx3)}
+.tk-flow-art{font-size:12px;color:var(--tx3);margin-top:8px}

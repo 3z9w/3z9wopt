@@ -1,0 +1,225 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   应用卸载页 · 独立样式（design/uninst.css）
+   ---------------------------------------------------------------------------
+   视觉语言与「系统优化页」（opt.css）同一套：玻璃卡 + --sp-grad 品牌渐变 + 扫光，
+   全部走主文件的主题变量，深浅色都跟着走，不另起一套颜色。
+   列宽是**唯一出处**：表头 .un-th 与数据行 .un-row 共用 .un-cols 的 grid 定义，
+   改列宽只改这一处，两边自动对齐（分开写必然错位）。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 顶部概览条（扫光，跟 opt-hero 同手法）───────────────────────────── */
+.un-hero{
+  position:relative;overflow:hidden;flex:0 0 auto;
+  display:flex;align-items:center;gap:16px;
+  padding:12px 17px;margin-bottom:12px;border-radius:var(--r1);
+  border:1px solid var(--stroke);box-shadow:var(--sh1);
+  background:
+    radial-gradient(520px 190px at 2% -60%, rgba(61,107,245,.16), transparent 62%),
+    radial-gradient(420px 180px at 98% 160%, rgba(34,211,238,.10), transparent 62%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+}
+.un-hero::after{
+  content:"";position:absolute;top:-60%;left:-70%;width:34%;height:220%;
+  pointer-events:none;z-index:0;transform:rotate(12deg);
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.16) 45%,transparent);
+  animation:un-sweep 8.5s linear infinite;
+}
+html[data-theme="light"] .un-hero::after{
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5) 45%,transparent);
+}
+@keyframes un-sweep{0%{left:-70%}58%,100%{left:130%}}
+html[data-motion="off"] .un-hero::after{animation:none;opacity:0}
+
+.un-fig{
+  position:relative;z-index:1;flex:0 0 auto;width:46px;height:46px;border-radius:50%;
+  display:grid;place-items:center;color:var(--info);
+  background:var(--glass-hi);border:1px solid var(--stroke-2);
+}
+.un-kpis{position:relative;z-index:1;display:flex;align-items:center;gap:18px;min-width:0;flex:0 1 auto}
+.un-kpi{display:flex;flex-direction:column;min-width:0}
+.un-kpi + .un-kpi{border-left:1px solid var(--stroke);padding-left:18px}
+.un-kpi b{font-size:19px;font-weight:680;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.un-kpi span{font-size:11.5px;color:var(--tx3);margin-top:2px;white-space:nowrap}
+.un-hero-r{position:relative;z-index:1;margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+/* ── 2 两个 Tab（桌面程序 / 系统内置应用）───────────────────────────────── */
+.un-tabs{display:flex;gap:8px;margin-bottom:10px;flex:0 0 auto}
+.un-tab{
+  flex:0 0 auto;height:34px;padding:0 16px;border-radius:var(--r2);cursor:pointer;
+  display:flex;align-items:center;gap:7px;font:inherit;font-size:13px;color:var(--tx2);
+  background:var(--glass-sink);border:1px solid var(--stroke);transition:.18s;
+}
+.un-tab:hover{color:var(--tx1);background:var(--glass-hi)}
+.un-tab.on{
+  color:var(--sp-tx);font-weight:650;border-color:transparent;
+  background:var(--sp-grad);box-shadow:var(--sh1);
+}
+.un-tab b{
+  font-weight:inherit;font-size:12px;opacity:.8;font-variant-numeric:tabular-nums;
+  padding:1px 6px;border-radius:20px;background:rgba(255,255,255,.16);
+}
+html[data-theme="light"] .un-tab b{background:rgba(0,0,0,.10)}
+.un-tab:not(.on) b{background:var(--glass-hi);opacity:.9}
+
+/* ── 3 搜索框（整行，与 hero / 底部条同宽）──────────────────────────────── */
+.un-search{
+  display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;margin-bottom:12px;
+  border-radius:var(--r2);background:var(--glass-sink);border:1px solid var(--stroke);
+  color:var(--tx3);transition:.18s;flex:0 0 auto;
+}
+.un-search:focus-within{border-color:var(--stroke-2);box-shadow:0 0 0 3px var(--glow);color:var(--info)}
+.un-search input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--tx1);font:inherit;font-size:13px}
+.un-search input::placeholder{color:var(--tx3)}
+
+/* ── 4 表格：列宽唯一出处 ───────────────────────────────────────────────── */
+/* 勾 | 图标 | 名称 | 发布者 | 版本 | 安装时间 | 大小 | 操作 */
+.un-cols{
+  display:grid;
+  grid-template-columns:22px 26px minmax(0,1fr) 128px 84px 96px 86px 62px;
+  align-items:center;gap:10px;
+}
+.un-tbl{
+  border-radius:var(--r1);border:1px solid var(--stroke);background:var(--glass-sink);
+  overflow:hidden;box-shadow:var(--sh1);
+}
+/* 表头 */
+.un-th{
+  padding:9px 14px;border-bottom:1px solid var(--stroke);
+  background:linear-gradient(120deg,var(--glass-hi),transparent);
+  font-size:11.5px;color:var(--tx3);position:sticky;top:0;z-index:2;
+}
+.un-th-i{
+  display:inline-flex;align-items:center;gap:4px;cursor:pointer;
+  background:transparent;border:0;font:inherit;color:inherit;padding:0;transition:.15s;
+  white-space:nowrap;
+}
+.un-th-i:hover{color:var(--tx1)}
+.un-th-i.on{color:var(--info);font-weight:650}
+.un-arw{font-size:9px;opacity:.45;transition:transform .18s,opacity .18s}
+.un-th-i.on .un-arw{opacity:1;transform:none}
+.un-th-i.asc .un-arw{transform:rotate(180deg)}
+/* 数据行 */
+.un-row{
+  padding:9px 14px;border-bottom:1px solid var(--stroke);
+  font-size:12.5px;color:var(--tx2);transition:background .15s;
+  animation:un-row-in .22s var(--e1) backwards;
+}
+.un-row:hover{background:var(--glass-hi)}
+.un-row:last-child{border-bottom:0}
+.un-row.sel{background:rgba(96,165,250,.10)}
+.un-row.no{opacity:.62}
+@keyframes un-row-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+html[data-motion="off"] .un-row{animation:none}
+
+.un-nm{
+  min-width:0;display:flex;align-items:center;gap:7px;
+  color:var(--tx1);font-weight:560;
+}
+.un-nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.un-ico{
+  flex:0 0 26px;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  background:var(--glass-hi);border:1px solid var(--stroke);color:var(--tx3);overflow:hidden;
+}
+.un-ico img{width:100%;height:100%;display:block;object-fit:contain}
+.un-ico.pend{animation:un-pulse 1.3s ease-in-out infinite}
+@keyframes un-pulse{0%,100%{opacity:.45}50%{opacity:.9}}
+html[data-motion="off"] .un-ico.pend{animation:none;opacity:.6}
+.un-dim{color:var(--tx3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.un-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.un-num b{color:var(--tx1);font-weight:600}
+.un-op{display:flex;justify-content:flex-end}
+.un-mini{
+  height:24px;padding:0 9px;border-radius:7px;cursor:pointer;white-space:nowrap;
+  border:1px solid var(--stroke);background:var(--glass-hi);color:var(--tx2);
+  font:inherit;font-size:11.5px;transition:.15s;
+}
+.un-mini:hover{color:var(--danger);border-color:rgba(251,113,133,.42);background:rgba(251,113,133,.12)}
+.un-mini:disabled{opacity:.45;cursor:not-allowed}
+
+/* ── 5 加载骨架（首次读取时列表还没回来）────────────────────────────────── */
+.un-sk{
+  height:11px;border-radius:6px;
+  background:linear-gradient(90deg,var(--glass-hi) 25%,var(--glass-sink) 37%,var(--glass-hi) 63%);
+  background-size:400% 100%;animation:un-shim 1.25s ease-in-out infinite;
+}
+@keyframes un-shim{0%{background-position:100% 50%}100%{background-position:0 50%}}
+html[data-motion="off"] .un-sk{animation:none}
+.un-sk-row{padding:11px 14px;border-bottom:1px solid var(--stroke)}
+.un-sk-row:last-child{border-bottom:0}
+
+/* ── 6 底部吸底操作条 ───────────────────────────────────────────────────── */
+.un-sp{flex:1 1 auto;min-height:0}
+.un-bar{
+  position:sticky;bottom:-1px;z-index:8;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:11px 14px;border-radius:14px;
+  background:var(--glass-sink);border:1px solid var(--stroke);
+  box-shadow:0 -10px 26px -16px rgba(0,0,0,.55);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+html[data-theme="light"] .un-bar{box-shadow:0 -10px 26px -18px rgba(11,26,62,.34)}
+.un-bar-sp{flex:1 1 auto;min-width:6px}
+.un-bar-n{font-size:12.5px;color:var(--tx2);white-space:nowrap}
+.un-bar-n b{color:var(--info);font-weight:680;font-variant-numeric:tabular-nums}
+
+/* ── 7 卸载进度（run 态）────────────────────────────────────────────────── */
+.un-run{
+  padding:16px 18px;border-radius:var(--r1);border:1px solid var(--stroke);
+  background:var(--glass-sink);box-shadow:var(--sh1);animation:un-row-in .24s var(--e1) backwards;
+}
+.un-run-h{display:flex;align-items:center;gap:11px;font-size:13.5px}
+.un-run-h b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.un-run-h em{margin-left:auto;font-style:normal;font-size:12px;color:var(--tx3);font-variant-numeric:tabular-nums}
+/* 卸载监视：只给「已等待 N 秒」+ 一个能提前收尾的按钮。
+   这里**故意没有进度条** —— 软件自己的卸载进度读不到，画出来就是编的。 */
+.un-run-wait{
+  display:flex;align-items:center;gap:12px;margin-top:11px;padding-top:11px;
+  border-top:1px solid var(--stroke);
+}
+.un-run-wait span{font-size:12.5px;color:var(--tx3);font-variant-numeric:tabular-nums}
+.un-run-wait .btn{margin-left:auto}
+/* 每项前面的状态图标：等待灰 / 运行蓝（转圈）/ 成功绿 / 未确认琥珀 */
+.un-pr-ico{flex:0 0 16px;display:grid;place-items:center;color:var(--tx3)}
+/* 本页的状态文字较长（带「已等待 N 秒」），给它固定宽度，别把软件名挤成省略号。
+   限定在 .un-prog 里 —— .prog-list 是框架通用类，别的页也在用，不能全局改。 */
+.un-prog .prog-item .ps{min-width:158px;white-space:nowrap}
+
+/* ── 8 残留清单（卸载后自动扫出来，给你决定清不清）────────────────────────── */
+.un-res-top{
+  display:flex;align-items:flex-start;gap:9px;margin-bottom:12px;padding:10px 14px;flex:0 0 auto;
+  border-radius:var(--r2);border:1px solid rgba(96,165,250,.32);
+  background:rgba(96,165,250,.10);color:var(--tx2);font-size:12.5px;line-height:1.55;
+}
+.un-res-top svg{flex:0 0 auto;margin-top:2px;color:var(--info)}
+.un-res-top b{color:var(--tx1);font-weight:600}
+.un-res-h{font-size:12px;color:var(--tx3);margin:0 0 6px 2px}
+.un-res-h b{color:var(--tx1);font-weight:640}
+.un-res-tbl{margin-bottom:14px}
+
+/* 勾 | 路径 + 理由 | 类型/体积 */
+.un-res{
+  display:grid;grid-template-columns:22px minmax(0,1fr) 84px;align-items:center;gap:10px;
+  padding:9px 14px;border-bottom:1px solid var(--stroke);cursor:pointer;transition:background .15s;
+}
+.un-res:last-child{border-bottom:0}
+.un-res:hover{background:var(--glass-hi)}
+.un-res.on{background:rgba(96,165,250,.09)}
+.un-res.lock{cursor:not-allowed;opacity:.62}
+.un-res.lock:hover{background:transparent}
+.un-res-m{min-width:0}
+.un-res-p{font-size:12.5px;color:var(--tx1);word-break:break-all;line-height:1.4}
+.un-res-d{
+  display:flex;align-items:center;gap:4px;margin-top:3px;
+  font-size:11.5px;color:var(--tx3);line-height:1.4;
+}
+.un-res.lock .un-res-d{color:var(--warn)}
+.un-res-t{
+  text-align:right;font-size:11.5px;color:var(--tx3);white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+
+/* 窄屏：发布者 / 版本两列让位给名称，避免挤成一团 */
+@media(max-width:1180px){
+  .un-cols{grid-template-columns:22px 26px minmax(0,1fr) 96px 100px 86px 62px}
+  .un-col-pub,.un-col-ver{display:none}
+}

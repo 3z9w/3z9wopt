@@ -1,0 +1,2286 @@
+[
+  {
+    "id": "fix-restore-point",
+    "cat": "fix",
+    "name": "创建系统还原点",
+    "desc": "给当前系统拍个快照，改出问题能一键回退",
+    "cmd": "SRSetRestorePointW（srclient.dll）—— 系统原生 API",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "建议在做系统优化、改注册表之前先跑一次，留条后路。需要 C 盘的「系统保护」已开启：此电脑 → C 盘右键 → 属性 → 系统保护 → 启用；没开启工具会明确告诉你是这个原因。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 300,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "fix-sfc",
+    "cat": "fix",
+    "name": "SFC 系统文件修复",
+    "desc": "扫描并用系统缓存自动修复受损的系统文件",
+    "cmd": "sfc /scannow",
+    "risk": "safe",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "预计 5–15 分钟。若提示「无法修复某些文件」，请接着跑「DISM 组件存储修复」，再回来重跑一次。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 3600,
+    "reboot": false,
+    "recommend": true,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "8080": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "C:": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "D:": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/scannow"
+          ],
+          "silent": "sfc"
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-sfc-verify",
+    "cat": "fix",
+    "name": "SFC 仅校验",
+    "desc": "只检查系统文件完整性，不做任何修改",
+    "cmd": "sfc /verifyonly",
+    "risk": "readonly",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "不想动系统文件、只想看看有没有问题时用这个。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 3600,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "8080": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "C:": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "D:": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "sfc.exe",
+          "args": [
+            "/verifyonly"
+          ],
+          "silent": "sfc"
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-dism-restore",
+    "cat": "fix",
+    "name": "DISM 组件存储修复",
+    "desc": "修复系统映像的组件损坏；SFC 修不了时靠它",
+    "cmd": "DISM /Online /Cleanup-Image /RestoreHealth",
+    "risk": "safe",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "需要联网从 Windows 更新拉取源文件。进度长时间停在 20% 或 40% 属正常现象，别关。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 3600,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/RestoreHealth"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-dism-scan",
+    "cat": "fix",
+    "name": "DISM 组件存储检查",
+    "desc": "只检测系统映像是否损坏，不做修复",
+    "cmd": "DISM /Online /Cleanup-Image /ScanHealth",
+    "risk": "readonly",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 3600,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "dism.exe",
+          "args": [
+            "/Online",
+            "/Cleanup-Image",
+            "/ScanHealth"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-boot",
+    "cat": "fix",
+    "name": "系统引导修复",
+    "desc": "重建主引导记录、引导扇区与启动配置数据 (BCD)",
+    "cmd": "bootrec /fixmbr + /fixboot + /rebuildbcd",
+    "risk": "caution",
+    "long": false,
+    "danger": true,
+    "backup": true,
+    "outText": false,
+    "note": "仅在开机出现「找不到操作系统」「引导失败」时使用。执行前会自动导出当前引导配置备份。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 600,
+    "reboot": true,
+    "rebootMsg": "引导配置的改动在下次开机时才会被使用，建议尽快重启并确认能正常进入系统",
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ],
+      "8080": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ],
+      "C:": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ],
+      "D:": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ],
+      "s:60": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ],
+      "taskmgr": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "title": "修复主引导记录 (MBR)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixmbr"
+          ]
+        },
+        {
+          "title": "修复引导扇区",
+          "exe": "bootrec.exe",
+          "args": [
+            "/fixboot"
+          ]
+        },
+        {
+          "title": "重建启动配置数据 (BCD)",
+          "exe": "bootrec.exe",
+          "args": [
+            "/rebuildbcd"
+          ],
+          "stdin": "A\r\n"
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-bcd",
+    "cat": "fix",
+    "name": "引导配置查看",
+    "desc": "列出所有启动项与引导参数，排查开机故障",
+    "cmd": "bcdedit /enum all",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 60,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "bcdedit.exe",
+          "args": [
+            "/enum",
+            "all"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-chkdsk",
+    "cat": "fix",
+    "name": "磁盘错误扫描",
+    "desc": "只读扫描系统盘的文件系统错误，不修改",
+    "cmd": "chkdsk \u003c系统盘\u003e /scan",
+    "risk": "readonly",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "只扫描并报告。要真正修复需计划下次开机检查，本工具不做。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 3600,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "chkdsk.exe",
+          "args": [
+            "C:",
+            "/scan"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "fix-update",
+    "cat": "fix",
+    "name": "Windows 更新组件修复",
+    "desc": "卡更新、更新报错时：停更新服务、重建缓存目录",
+    "cmd": "停 wuauserv/bits/cryptsvc + 重建 SoftwareDistribution",
+    "risk": "caution",
+    "long": false,
+    "danger": true,
+    "backup": false,
+    "outText": false,
+    "note": "修复期间会暂停 Windows 更新服务；已下载未安装的更新需要重新下载。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 300,
+    "reboot": true,
+    "rebootMsg": "更新服务的状态与缓存目录要在重启后才彻底恢复干净",
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "fix-update-list",
+    "cat": "fix",
+    "name": "补丁列表",
+    "desc": "列出已安装的更新补丁，供「补丁卸载」复制 Package Identity",
+    "cmd": "dism /online /get-packages",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "复制完整 Package Identity（或 KB 号）填进「补丁卸载」。列表里也有功能包/语言包，不确定的别卸。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 300,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "fix-update-remove",
+    "cat": "fix",
+    "name": "补丁卸载",
+    "desc": "卸载导致蓝屏/异常的历史更新补丁，回滚恢复",
+    "cmd": "dism /online /norestart /remove-package /packagename:\u003cIdentity\u003e",
+    "risk": "reboot",
+    "long": true,
+    "danger": true,
+    "backup": false,
+    "outText": false,
+    "note": "列表按安装时间排序（新的在前），点「卸载」即可。单个卸载 1–5 分钟，别关。",
+    "argKind": "updatelist",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 600,
+    "reboot": true,
+    "rebootMsg": "补丁卸载要重启后才彻底生效；重启前个别组件可能表现异常",
+    "recommend": true,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "fix-store",
+    "cat": "fix",
+    "name": "应用商店缓存重置",
+    "desc": "应用商店打不开、下载卡住、装不上应用时用",
+    "cmd": "wsreset",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "执行后会弹出应用商店窗口，属正常现象。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 180,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ],
+      "8080": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ],
+      "C:": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ],
+      "D:": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "wsreset.exe"
+        }
+      ]
+    }
+  },
+  {
+    "id": "net-smart",
+    "cat": "net",
+    "name": "网络修复",
+    "desc": "常用网络修复集于一体：一键智能全修复 + 单项修复 + 网络诊断，结果实时输出",
+    "cmd": "集成面板 · 一键项：清除系统代理 + 刷新 DNS + 清理 ARP + 同步时间 + 续租 IP",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "一键智能全修复全程不需要重启，期间会短暂断网几秒（重新申请 IP）。如还无法上网，再点「重置 Winsock/TCP/IP」并重启。",
+    "argKind": "netpanel",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 300,
+    "reboot": false,
+    "recommend": true,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "net-lanfix",
+    "cat": "net",
+    "name": "局域网共享修复",
+    "desc": "一键修复局域网共享与打印机共享：服务、防火墙、网络发现、RPC 全部打通",
+    "cmd": "共享服务启动 + 防火墙放通 + 网络发现开启 + RPC 加固（中英文规则组容错）",
+    "risk": "caution",
+    "long": false,
+    "danger": true,
+    "backup": false,
+    "outText": false,
+    "note": "共享用不了的根因通常就这几处：公用网络禁发现、发现类服务没起、防火墙拦了共享端口、RPC/SMB 异常。本工具逐项修复，SMB 与 Guest 只检查不改动（避免引入兼容/安全问题）。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 240,
+    "reboot": true,
+    "rebootMsg": "共享相关的服务与网络发现配置要重启后才完全生效，重启前建议先试一次访问共享",
+    "recommend": true,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "net-speed",
+    "cat": "net",
+    "name": "宽带测速",
+    "desc": "下载 / 上传带宽 + 延迟抖动丢包，自动挑最快节点，实时速度曲线",
+    "cmd": "多线程并发测速（内置国内镜像 + Cloudflare 节点）",
+    "risk": "safe",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "测速会消耗几十 MB 流量；用 WiFi 建议靠近路由器，测速时别同时下载东西，结果才准。",
+    "argKind": "speedtest",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": true,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "net-ping",
+    "cat": "net",
+    "name": "连通性测试",
+    "desc": "向指定主机发包，看丢包与延迟",
+    "cmd": "ping -n 4 \u003c主机\u003e",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "text",
+    "argLabel": "主机",
+    "argHint": "域名或 IP，例如 www.baidu.com",
+    "argDef": "www.baidu.com",
+    "argReq": true,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            ""
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            "8080"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            "C:"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            "D:"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            "s:60"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            "taskmgr"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "ping.exe",
+          "args": [
+            "-n",
+            "4",
+            "www.baidu.com"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "net-tracert",
+    "cat": "net",
+    "name": "路由跟踪",
+    "desc": "逐跳追踪到目标，定位卡在哪一环",
+    "cmd": "tracert -d \u003c主机\u003e",
+    "risk": "safe",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "text",
+    "argLabel": "主机",
+    "argHint": "域名或 IP，例如 www.baidu.com",
+    "argDef": "www.baidu.com",
+    "argReq": true,
+    "timeout": 300,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            ""
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            "8080"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            "C:"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            "D:"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            "s:60"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            "taskmgr"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "tracert.exe",
+          "args": [
+            "-d",
+            "www.baidu.com"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "net-port",
+    "cat": "net",
+    "name": "端口占用查询",
+    "desc": "谁占着某个端口（含占用进程名）",
+    "cmd": "netstat -ano + 进程反查",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "text",
+    "argLabel": "端口",
+    "argHint": "留空 = 列出所有监听端口，例如 8080",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 60,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "net-hosts",
+    "cat": "net",
+    "name": "Hosts 文件编辑",
+    "desc": "打开 hosts 文件（屏蔽域名 / 本地调试），改动前自动备份",
+    "cmd": "备份 + 打开 %windir%\\System32\\drivers\\etc\\hosts",
+    "risk": "caution",
+    "long": false,
+    "danger": true,
+    "backup": false,
+    "outText": false,
+    "note": "保存后可能需执行「DNS 缓存刷新」才生效。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 60,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "disk-smart",
+    "cat": "disk",
+    "name": "磁盘健康检测",
+    "desc": "读取硬盘型号、容量、接口与 S.M.A.R.T. 健康状态",
+    "cmd": "WMI 查询 Win32_DiskDrive / MSStorageDriver_FailurePredictStatus",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "disk-speed",
+    "cat": "disk",
+    "name": "磁盘读写测速",
+    "desc": "实测顺序写入与读取速度（MB/s）",
+    "cmd": "本地写入 32MB 测试文件并读回",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "会在临时目录写入约 32MB 测试文件，测完自动删除。读取速度含系统缓存影响，仅供参考。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 300,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "disk-defrag-analyze",
+    "cat": "disk",
+    "name": "磁盘碎片分析",
+    "desc": "分析碎片情况，判断是否需要整理",
+    "cmd": "defrag \u003c盘符\u003e /A",
+    "risk": "readonly",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "drive",
+    "argLabel": "盘符",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 1800,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "C:",
+            "/A"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "8080:",
+            "/A"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "C:",
+            "/A"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "D:",
+            "/A"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "s:60:",
+            "/A"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "taskmgr:",
+            "/A"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "www.baidu.com:",
+            "/A"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "disk-defrag-optimize",
+    "cat": "disk",
+    "name": "磁盘优化整理",
+    "desc": "SSD 发 TRIM 指令、机械盘整理碎片",
+    "cmd": "defrag \u003c盘符\u003e /O",
+    "risk": "safe",
+    "long": true,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "优化期间可以正常用电脑，但会占用一定磁盘性能。",
+    "argKind": "drive",
+    "argLabel": "盘符",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 3600,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "C:",
+            "/O"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "8080:",
+            "/O"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "C:",
+            "/O"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "D:",
+            "/O"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "s:60:",
+            "/O"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "taskmgr:",
+            "/O"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "defrag.exe",
+          "args": [
+            "www.baidu.com:",
+            "/O"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "info-hw",
+    "cat": "info",
+    "name": "硬件信息总览",
+    "desc": "CPU、内存、主板、BIOS、显卡、网卡、硬盘一览",
+    "cmd": "WMI 汇总查询",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "info-updates",
+    "cat": "info",
+    "name": "已安装更新",
+    "desc": "系统补丁清单与安装时间",
+    "cmd": "WMI 查询 Win32_QuickFixEngineering",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "info-drivers",
+    "cat": "info",
+    "name": "驱动与服务列表",
+    "desc": "驱动名称、类型与运行状态详情",
+    "cmd": "driverquery /v",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 180,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "driverquery.exe",
+          "args": [
+            "/v",
+            "/FO",
+            "TABLE"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "info-battery",
+    "cat": "info",
+    "name": "电池健康报告",
+    "desc": "笔记本电池容量损耗与循环次数（生成报告文件）",
+    "cmd": "powercfg /batteryreport",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "报告保存到工具库存档目录，生成后给出路径。台式机会提示无电池。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "powercfg.exe",
+          "args": [
+            "/batteryreport",
+            "/output",
+            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "info-uptime",
+    "cat": "info",
+    "name": "系统运行时长",
+    "desc": "本次开机时长、系统安装时间与启动时刻",
+    "cmd": "系统计时 + 注册表",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 30,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "util-shutdown",
+    "cat": "util",
+    "name": "定时关机 / 重启",
+    "desc": "设定指定时间后关机、重启或睡眠",
+    "cmd": "shutdown /s | /r | /h /t \u003c分钟\u003e",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "shutdown",
+    "argLabel": "时间",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 60,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "util-shutdown-cancel",
+    "cat": "util",
+    "name": "取消关机计划",
+    "desc": "撤销已设定的定时关机或重启",
+    "cmd": "shutdown /a",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 30,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "shutdown.exe",
+          "args": [
+            "/a"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "util-timesync",
+    "cat": "util",
+    "name": "系统时间同步",
+    "desc": "与互联网时间服务器重新对时",
+    "cmd": "w32tm /resync",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 60,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "w32tm.exe",
+          "args": [
+            "/resync"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "util-spooler",
+    "cat": "util",
+    "name": "打印机服务重启",
+    "desc": "打印队列卡死、点了没反应时用",
+    "cmd": "net stop spooler + net start spooler",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "会清空当前打印队列中卡住的任务。",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 120,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "title": "停止打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "stop",
+            "spooler"
+          ]
+        },
+        {
+          "title": "启动打印后台服务",
+          "exe": "net.exe",
+          "args": [
+            "start",
+            "spooler"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "util-opentool",
+    "cat": "util",
+    "name": "快速打开系统工具",
+    "desc": "任务管理器、服务、设备管理器、注册表等一键打开",
+    "cmd": "按选择启动系统组件",
+    "risk": "safe",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": false,
+    "note": "",
+    "argKind": "opentool",
+    "argLabel": "工具",
+    "argHint": "",
+    "argDef": "taskmgr",
+    "argReq": true,
+    "opts": [
+      {
+        "v": "taskmgr",
+        "t": "任务管理器"
+      },
+      {
+        "v": "services",
+        "t": "服务"
+      },
+      {
+        "v": "devmgmt",
+        "t": "设备管理器"
+      },
+      {
+        "v": "diskmgmt",
+        "t": "磁盘管理"
+      },
+      {
+        "v": "regedit",
+        "t": "注册表编辑器"
+      },
+      {
+        "v": "gpedit",
+        "t": "本地组策略"
+      },
+      {
+        "v": "eventvwr",
+        "t": "事件查看器"
+      },
+      {
+        "v": "msconfig",
+        "t": "系统配置"
+      },
+      {
+        "v": "msinfo",
+        "t": "系统信息"
+      },
+      {
+        "v": "netconn",
+        "t": "网络连接"
+      },
+      {
+        "v": "firewall",
+        "t": "防火墙设置"
+      },
+      {
+        "v": "control",
+        "t": "控制面板"
+      }
+    ],
+    "timeout": 30,
+    "reboot": false,
+    "recommend": false,
+    "impl": "custom",
+    "steps": {
+      "": [],
+      "8080": [],
+      "C:": [],
+      "D:": [],
+      "s:60": [],
+      "taskmgr": [],
+      "www.baidu.com": []
+    }
+  },
+  {
+    "id": "util-activation",
+    "cat": "util",
+    "name": "系统激活状态",
+    "desc": "查看 Windows 版本、授权类型与激活状态",
+    "cmd": "cscript slmgr.vbs /dli",
+    "risk": "readonly",
+    "long": false,
+    "danger": false,
+    "backup": false,
+    "outText": true,
+    "note": "",
+    "argKind": "",
+    "argLabel": "",
+    "argHint": "",
+    "argDef": "",
+    "argReq": false,
+    "timeout": 60,
+    "reboot": false,
+    "recommend": false,
+    "impl": "steps",
+    "steps": {
+      "": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ],
+      "8080": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ],
+      "C:": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ],
+      "D:": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ],
+      "s:60": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ],
+      "taskmgr": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ],
+      "www.baidu.com": [
+        {
+          "exe": "cscript.exe",
+          "args": [
+            "//nologo",
+            "C:\\Windows\\System32\\slmgr.vbs",
+            "/dli"
+          ]
+        }
+      ]
+    }
+  }
+]

@@ -1,0 +1,223 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   蓝屏分析 · 独立样式（design/bsod.css）
+   ---------------------------------------------------------------------------
+   版面照驱动管理页那一套（配色基准 = 本机配置页：玻璃卡 + 蓝为主，琥珀只留给提示条）：
+   hero（一句话 + 三个 KPI）→ 提示条 → 转储列表（占主体、自己滚）→ 底部操作栏常驻。
+   ⚠️ .page 是 flex 列容器：页面顶层块必须显式 flex:0 0 auto，否则被压缩成 0 高。
+   ══════════════════════════════════════════════════════════════════════════ */
+.bs-hero,.bs-tip,.bs-foot{flex:0 0 auto}
+
+/* ── 1 hero：一句话说明 + 三个 KPI ─────────────────────────────────────── */
+.bs-hero{
+  position:relative;overflow:hidden;
+  display:flex;align-items:center;gap:14px;padding:12px 16px;
+  border-radius:var(--r1);margin-bottom:11px;border:1px solid var(--stroke);
+  background:
+    radial-gradient(520px 190px at 2% -60%, rgba(61,107,245,.15), transparent 60%),
+    radial-gradient(420px 180px at 98% 160%, rgba(34,211,238,.10), transparent 60%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  box-shadow:var(--sh1);
+}
+.bs-hero-ico{
+  width:38px;height:38px;border-radius:12px;flex:0 0 auto;display:grid;place-items:center;
+  color:var(--info);
+  background:linear-gradient(140deg,rgba(61,107,245,.17),rgba(34,211,238,.06));
+  border:1px solid rgba(61,107,245,.2);
+}
+.bs-hero-main{flex:1 1 240px;min-width:0}
+.bs-hero-t{font-size:13px;font-weight:650;color:var(--tx1)}
+.bs-hero-d{font-size:11.5px;color:var(--tx3);line-height:1.55;margin-top:2px}
+.bs-hero-d b{color:var(--tx2);font-weight:640}
+.bs-kpis{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.bs-kpi{
+  min-width:76px;max-width:210px;padding:5px 11px;border-radius:9px;text-align:center;
+  background:var(--glass-hi);border:1px solid var(--stroke-2);
+}
+.bs-kpi span{display:block;font-size:10.5px;color:var(--tx3)}
+.bs-kpi b{display:block;font-size:17px;font-weight:700;color:var(--tx1);line-height:1.3;
+  font-variant-numeric:tabular-nums;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 「最近一次」是完整时间、「最常出现」是错误符号名 —— 都可能很长：
+   字号降一档 + 单行省略（写了数字不写单位对齐，别让 KPI 被撑高） */
+.bs-kpi.sm b{font-size:13px;font-weight:640;letter-spacing:0}
+.bs-kpi.on{border-color:var(--info)}
+.bs-kpi.on b{color:var(--info)}
+
+/* 本页不整页滚动：列表自己滚，底部操作栏常驻可见（与驱动页同一条规则）。
+   老 WebView2 不认 :has() 时规则自动失效 → 退回整页滚动，版面不会坏。 */
+.page:has(> .bs-list){height:100%;min-height:0;overflow:hidden}
+
+/* ── 2 提示条（只读不改 + 在线查完整释义）─────────────────────────────── */
+.bs-tip{
+  display:flex;align-items:flex-start;gap:8px;padding:9px 12px;margin-bottom:11px;
+  border-radius:var(--r1);font-size:12px;line-height:1.6;color:var(--tx2);
+  border:1px solid rgba(61,107,245,.22);background:rgba(61,107,245,.07);
+}
+.bs-tip svg{flex:0 0 auto;margin-top:1px;color:var(--info)}
+.bs-tip b{color:var(--info);font-weight:660}
+.bs-tip a{color:var(--info);text-decoration:none;border-bottom:1px dashed rgba(61,107,245,.5);cursor:pointer}
+.bs-tip a:hover{border-bottom-style:solid}
+
+/* ── 3 列表区（占主体、自己滚）──────────────────────────────────────────── */
+.bs-list{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  border-radius:var(--r1);border:1px solid var(--stroke);background:var(--glass);box-shadow:var(--sh1)}
+.bs-item{
+  display:flex;align-items:center;gap:12px;padding:10px 13px;
+  border-bottom:1px solid var(--stroke);cursor:pointer;transition:background .15s var(--e1);
+}
+.bs-item:last-child{border-bottom:none}
+.bs-item:hover{background:var(--glass-hi)}
+/* 错误码：等宽 + 琥珀底（蓝屏码是这一行的重点，别跟正文抢） */
+.bs-code{
+  flex:0 0 auto;min-width:96px;text-align:center;padding:4px 8px;border-radius:7px;
+  font-family:ui-monospace,Consolas,monospace;font-size:11.5px;font-weight:600;
+  color:var(--warn);background:rgba(245,196,81,.12);border:1px solid rgba(245,196,81,.28);
+}
+.bs-item.bad .bs-code{color:var(--tx3);background:var(--glass-hi);border-color:var(--stroke-2)}
+.bs-mid{flex:1 1 auto;min-width:0}
+.bs-t{display:flex;align-items:baseline;gap:8px;min-width:0;
+  font-size:13.5px;font-weight:640;color:var(--tx1)}
+.bs-t .bs-zh{
+  font-size:11.5px;font-weight:500;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bs-d{margin-top:3px;font-size:11.5px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bs-go{
+  flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 11px;
+  font-size:12px;font-weight:600;border-radius:8px;cursor:pointer;white-space:nowrap;
+  border:1px solid var(--stroke-2);background:var(--glass-hi);color:var(--info);
+  transition:background .16s var(--e1),border-color .16s var(--e1);
+}
+.bs-go:hover{background:var(--glass);border-color:var(--info)}
+.bs-item.bad .bs-go{color:var(--tx3)}
+
+/* 空态 / 读失败 */
+.bs-empty{padding:34px 20px;text-align:center}
+.bs-empty-ico{display:grid;place-items:center;color:var(--info);opacity:.85}
+.bs-empty-ico.ok{color:var(--ok)}
+.bs-empty-ico.err{color:var(--danger)}
+.bs-empty-t{margin-top:10px;font-size:14px;font-weight:650;color:var(--tx1)}
+.bs-empty-d{margin:6px auto 0;max-width:560px;font-size:12px;line-height:1.75;color:var(--tx3)}
+.bs-empty-d b{color:var(--tx2);font-weight:640}
+.bs-empty-acts{margin-top:14px;display:flex;justify-content:center}
+
+/* ── 4 底部操作栏（常驻，不随列表滚走）─────────────────────────────────── */
+.bs-foot{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-top:11px;padding:9px 12px;border-radius:var(--r1);
+  border:1px solid var(--stroke);background:var(--glass);box-shadow:var(--sh1);
+}
+.bs-foot .sp{flex:1 1 auto}
+.bs-count{font-size:12px;color:var(--tx3);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;min-width:0}
+.bs-count b{color:var(--info);font-weight:700;font-variant-numeric:tabular-nums}
+.bs-btn{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;
+  font-size:12.5px;font-weight:600;border-radius:8px;cursor:pointer;white-space:nowrap;
+  border:1px solid var(--stroke-2);background:var(--glass-hi);color:var(--tx1);
+  transition:background .16s var(--e1),border-color .16s var(--e1),color .16s var(--e1);
+}
+.bs-btn:hover{background:var(--glass);border-color:var(--info);color:var(--info)}
+.bs-btn.pri{background:var(--info);border-color:var(--info);color:#fff}
+.bs-btn.pri:hover{filter:brightness(1.08);color:#fff}
+.bs-btn:disabled{opacity:.55;cursor:default}
+
+/* ── 5 详情弹窗内容 ─────────────────────────────────────────────────────── */
+/* 弹窗总高必须留在视口内：.modal 是 flex 居中且 box 没有 max-height，
+   内容区不给上限就会顶出屏幕，底部按钮跟着被推出可视区（实测 780 高窗口就切掉了） */
+.bs-detail{max-height:min(46vh,380px);overflow-y:auto;padding-right:4px;
+  margin-bottom:14px;   /* 滚动区贴住底部按钮会看着像"被按钮盖住"，留一口气 */
+  font-size:12.5px;line-height:1.75;color:var(--tx2)}
+.bs-cause{padding:8px 11px;margin-bottom:10px;border-radius:8px;
+  background:var(--glass-hi);border-left:3px solid var(--info);color:var(--tx2)}
+.bs-cause b{display:block;color:var(--info);font-size:11.5px;font-weight:700;margin-bottom:2px}
+.bs-sec{margin:12px 0 6px;font-size:11.5px;font-weight:700;color:var(--tx1);letter-spacing:.3px}
+.bs-kv{display:flex;gap:10px;align-items:baseline;padding:3px 0}
+.bs-kv span{flex:0 0 74px;color:var(--tx3);font-size:11.5px}
+.bs-kv b{flex:1 1 auto;min-width:0;font-weight:600;color:var(--tx2);word-break:break-all}
+/* 圆点清单别把整行设成 flex：文字节点会被拉成两段（全站踩过的坑） */
+.bs-param,.bs-adv{position:relative;padding-left:12px}
+.bs-param::before,.bs-adv::before{content:'';position:absolute;left:2px;top:.62em;
+  width:4px;height:4px;border-radius:50%;background:var(--stroke-2)}
+.bs-adv{display:flex;align-items:flex-start;gap:6px;padding-left:0}
+.bs-adv::before{display:none}
+.bs-adv svg{flex:0 0 auto;margin-top:3px;color:var(--ok)}
+.bs-kv b.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;letter-spacing:0}
+
+/* ── 6 驱动表（对齐 BlueScreenView：上方嫌疑驱动、下方该转储装载的全部内核驱动）──
+   列多且窄，横竖都要能滚；栈内命中的行蓝底高亮 = 谁把系统搞崩的。 */
+.bs-tbl-wrap{overflow:auto;border:1px solid var(--stroke);border-radius:8px;background:var(--glass-sink)}
+.bs-tbl{border-collapse:collapse;width:100%;min-width:640px;font-size:11.5px}
+.bs-tbl th{
+  position:sticky;top:0;z-index:1;text-align:left;white-space:nowrap;
+  padding:6px 8px;font-weight:600;color:var(--tx3);
+  background:var(--glass);border-bottom:1px solid var(--stroke);
+}
+.bs-tbl td{
+  padding:5px 8px;border-bottom:1px solid var(--stroke);color:var(--tx2);
+  white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;
+}
+.bs-tbl tr:last-child td{border-bottom:none}
+.bs-tbl td.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--tx3)}
+.bs-tbl td.nm{font-weight:640;color:var(--tx1)}
+.bs-tbl td.nm i{font-style:normal;margin-left:6px;padding:1px 5px;border-radius:5px;
+  font-size:10px;font-weight:700;color:var(--info);background:var(--glass-hi);border:1px solid var(--info)}
+.bs-tbl tr.hit td{background:rgba(61,107,245,.07)}
+.bs-tbl tr.hit td.nm{color:var(--info)}
+.bs-tbl td.pth{max-width:280px;color:var(--tx3);font-size:11px}
+/* ≈ 标记：版本几列来自本机同名文件、与转储里的镜像对不上（看别人的转储时常见） */
+.bs-oth{font-style:normal;margin-left:4px;padding:0 3px;border-radius:4px;cursor:help;
+  font-size:10.5px;font-weight:700;color:var(--warn);
+  background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.35)}
+
+/* 全量模块表默认收起：一屏两百行，不点开不占地方 */
+.bs-mods{margin-top:10px;border:1px solid var(--stroke);border-radius:8px;background:var(--glass-sink)}
+.bs-mods>summary{cursor:pointer;list-style:none;padding:8px 11px;font-size:12px;font-weight:620;color:var(--tx2)}
+.bs-mods>summary::-webkit-details-marker{display:none}
+.bs-mods>summary::before{content:'▸';display:inline-block;width:12px;color:var(--info)}
+.bs-mods[open]>summary::before{content:'▾'}
+.bs-mods>summary b{color:var(--info);font-variant-numeric:tabular-nums}
+.bs-mods .bs-tbl-wrap{border:none;border-top:1px solid var(--stroke);border-radius:0 0 8px 8px;
+  max-height:min(28vh,220px)}
+.bs-none{padding:6px 0;color:var(--tx3);font-size:12px}
+.bs-note{margin-top:10px;padding:8px 11px;border-radius:8px;
+  background:var(--glass-sink);border:1px dashed var(--stroke-2);
+  font-size:11.5px;color:var(--tx3);line-height:1.7}
+
+/* ── 7 分层排版：人话在上、原始字段在下 ────────────────────────────────────
+   同一份报告给两种人看：小白只看「这是什么情况 / 该怎么做」就够了，
+   工程师再往下翻专业信息（错误码、参数、调用栈、驱动表）。 */
+.bs-verdict{padding:10px 12px;border-radius:8px;
+  background:var(--glass-hi);border:1px solid var(--stroke-2)}
+.bs-verdict-t{display:flex;align-items:center;gap:6px;
+  font-size:11.5px;font-weight:700;color:var(--info);margin-bottom:4px}
+.bs-verdict-t svg{flex:0 0 auto}
+.bs-plain{margin:0 0 4px;font-size:12.5px;line-height:1.8;color:var(--tx2)}
+.bs-plain:last-child{margin-bottom:0}
+.bs-plain b{color:var(--tx1);font-weight:680}
+.bs-plain b.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;font-weight:700;color:var(--info)}
+/* 建议改成编号步骤：小白照着 1→2→3 做，不是一堆平铺的勾 */
+.bs-step{flex:0 0 auto;width:16px;height:16px;border-radius:50%;margin-top:3px;
+  display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;background:var(--info)}
+/* 专业信息：默认展开（点进这一页的人多半就是要看这些），标题一行说清里面有什么 */
+.bs-pro{margin-top:12px;border:1px solid var(--stroke);border-radius:8px;background:var(--glass-sink)}
+.bs-pro>summary{cursor:pointer;list-style:none;padding:8px 11px;font-size:12px;font-weight:620;color:var(--tx2)}
+.bs-pro>summary::-webkit-details-marker{display:none}
+.bs-pro>summary::before{content:'▸';display:inline-block;width:12px;color:var(--info)}
+.bs-pro[open]>summary::before{content:'▾'}
+.bs-pro>summary{border-bottom:1px solid transparent}
+.bs-pro[open]>summary{border-bottom-color:var(--stroke)}
+.bs-pro .bs-sec:first-of-type{margin-top:8px}
+.bs-pro>*:not(summary){padding:0 11px}
+.bs-pro .bs-tbl-wrap{margin-bottom:10px}
+/* 关键字段两列铺：一行一项太占竖向空间，弹窗本来就限高 */
+.bs-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px;padding-top:6px}
+.bs-fields .bs-kv span{flex:0 0 86px}
+
+@media (max-width:1080px){
+  .bs-fields{grid-template-columns:1fr}
+  .bs-kpis{width:100%;flex-wrap:wrap}
+  .bs-kpi{flex:1 1 100px}
+  .bs-code{min-width:84px}
+  .bs-item .bs-go{padding:0 9px}
+}

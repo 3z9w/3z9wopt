@@ -1,0 +1,46 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   关于 · 独立样式（design/about.css）· 2026-10-13 按 v2 版面移植，配色换 v1.1
+   ---------------------------------------------------------------------------
+   结构照 v2（frontend/dist/styles.css 关于区块），颜色走 v1.1 变量。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.ab-hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 24px 20px}
+.ab-logo{width:64px;height:64px;border-radius:16px;border:1px solid var(--stroke)}
+.ab-name{margin-top:12px;font-size:17px;font-weight:700;color:var(--tx1);letter-spacing:.2px}
+.ab-ver{margin-top:5px;font-size:12px;color:var(--tx2)}
+.ab-desc{margin-top:9px;font-size:12.5px;color:var(--tx2);line-height:1.7;max-width:520px}
+.ab-acts{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap;justify-content:center}
+
+.ab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:14px}
+.ab-card{padding:15px 17px}
+.ab-t{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:650;color:var(--tx1);margin-bottom:10px}
+.ab-t svg{width:15px;height:15px;color:var(--info)}
+.ab-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:8px 0;border-top:1px solid var(--stroke);font-size:12.5px}
+.ab-row:first-of-type{border-top:none}
+.ab-row span{color:var(--tx2);flex:0 0 auto}
+.ab-row b{font-weight:650;color:var(--tx1);text-align:right}
+
+.ab-qr{width:128px;margin:0 auto;padding:7px;border-radius:12px;border:1.5px dashed var(--stroke-2);background:#fff}
+.ab-qr img{display:block;width:100%;border-radius:6px}
+.ab-qr-tip{margin-top:9px;font-size:11.5px;color:var(--tx2);text-align:center;line-height:1.5}
+.ab-wxid{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:11px;font-size:12.5px;color:var(--tx2)}
+.ab-wxid b{font-size:16px;font-weight:700;color:var(--tx1);font-family:Consolas,"Courier New",monospace;letter-spacing:1px}
+.ab-qq{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:2px;font-size:12.5px;color:var(--tx2)}
+.ab-qq b{font-size:18px;font-weight:700;color:var(--tx1);font-family:Consolas,"Courier New",monospace;letter-spacing:1px}
+
+/* 设置弹窗里的「关于」面板（2026-10-13）：版面照旧，只把留白收一档。
+   面板只有 ~600px 宽，hero 原样那套 padding 会把卡片顶得很高，一屏装不下。
+   ⚠️ .ab-grid 用 auto-fit + minmax(280px)，620px 下自己落成两列，不用重写。 */
+.ab-pane .ab-hero{padding:18px 18px 15px}
+.ab-pane .ab-logo{width:54px;height:54px;border-radius:14px}
+.ab-pane .ab-desc{font-size:12px;margin-top:7px}
+.ab-pane .ab-acts{margin-top:12px;gap:7px}
+.ab-pane .ab-grid{gap:10px;margin-top:11px}
+.ab-pane .ab-card{padding:13px 15px}
+/* 提示条在面板里就是最后一张卡，留像 others 一样的间距就行 */
+
+.ab-note{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:13px 16px;
+  font-size:12px;color:var(--tx2);line-height:1.65}
+.ab-note svg{width:16px;height:16px;color:var(--warn);flex:0 0 auto;margin-top:1px}
+.ab-note span{min-width:0}

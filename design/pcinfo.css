@@ -1,0 +1,475 @@
+/* ============================================================================
+   pcinfo.css —— 本机配置页样式（2026-10-10 第四版 · 版面重排）
+   ---------------------------------------------------------------------------
+   第四版要解决的事（用户 2026-10-10 逐条提的）：
+
+     ① 「重新读取 / 导出配置」跑到右上角 —— 实测根因：.page-head 没设 display:flex，
+        标题、副标题、按钮三个块级元素各占一行（共 76px）。改成一行 flex 后 28px。
+     ② 副标题「全部实时读取，取不到就写「未获取到」，不猜。」删掉 —— 用户说不用说。
+     ③ 固件徽标（BIOS / 启动模式 / 安全启动 / UEFI 证书）一字排开：
+        原来 2×2 两行、名值上下叠，44px；现在一行 30px。
+     ④ Tab 条与内容区**合成一个区块**（一块带标签页的面板），不再上下两块。
+     ⑤ 右侧实时指标**合成一张卡**，一行一个指标，温度并排进来 ——
+        原来四张独立卡叠到 404px，温度卡被挤到折叠线以下（这就是「温度怎么不显示」）。
+     ⑥ 全局再收一档留白，把一屏塞回来（改前 .pc-body 只有 282px，概要溢出 210px）。
+
+   颜色一律走全局变量（--glass / --stroke / --tx1 / --info / --sp-grad …），
+   亮色 + 暗色两套主题自动跟随。
+   ============================================================================ */
+
+/* ---------- 页头：一行，按钮贴右上角 ---------- */
+/* 把 .page 钉在容器高度内，让内容区自己滚（不这么做整页会出现滚动条，横幅跟着滚走）。
+   :has() 只命中带 pc-hero 的本页，不动其它页；老浏览器不支持时退回整页滚，功能不受影响。 */
+.page:has(> .pc-hero){height:100%;overflow:hidden;box-sizing:border-box}
+.pc-head{
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:10px;flex:0 0 auto;
+}
+.pc-head .page-title{font-size:19px;letter-spacing:-.01em;line-height:1.2}
+.pc-acts{margin-left:auto;display:flex;gap:8px;flex:0 0 auto}
+
+/* ============================================================================
+   ① Hero —— 机器名片
+   ============================================================================ */
+.pc-hero{
+  position:relative;overflow:hidden;flex:0 0 auto;
+  padding:13px 17px;border-radius:var(--r1);margin-bottom:10px;
+  border:1px solid var(--stroke);
+  background:
+    radial-gradient(560px 200px at 3% -55%, rgba(61,107,245,.16), transparent 60%),
+    radial-gradient(440px 190px at 97% 150%, rgba(34,211,238,.11), transparent 60%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  box-shadow:var(--sh1);
+  display:flex;align-items:center;gap:16px;
+}
+/* 常驻流光：斜向高光缓慢扫过。机型是「这台机器的身份证」，值得多看两眼。
+   ⚠️ 高度不写死：由内容决定，写死会被 overflow:hidden 切掉。
+   ⚠️ 强度必须分主题：同一片 50% 白在浅底上只是「亮了一道」，在深底上却是
+   一条几十像素宽的白带横在型号文字上，把字压得看不清（深色主题截图实测）。
+   深色（默认）压到 16%，浅色才用原来的 50%。 */
+.pc-hero::after{
+  content:"";position:absolute;top:-60%;left:-70%;
+  width:36%;height:220%;pointer-events:none;z-index:0;transform:rotate(12deg);
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.16) 45%,transparent);
+  animation:pc-sweep 8.5s linear infinite;
+}
+html[data-theme="light"] .pc-hero::after{
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5) 45%,transparent);
+}
+@keyframes pc-sweep{0%{left:-70%}58%,100%{left:130%}}
+html[data-motion="off"] .pc-hero::after{animation:none;opacity:0}
+
+/* 机型徽章：一个圆，坐在横幅**最左边**（用户 2026-10-10 发对照图定案：圆底 + 线稿）。
+   原来是铺在右侧当 7% 透明底纹、字压在上面 —— 用户说不要这样，要「一个圈」。
+   ⚠️ 从 position:absolute 改成常规流里的第一项：absolute 不参与 flex 排布，
+   想让它贴左边就得自己算位置（写死像素，换台机器 / 换标题长度立刻跑偏）。
+   放进流里之后，flex 自然把它排在 body 前面，宽度也由内容撑。 */
+.pc-hero-fig{
+  position:relative;z-index:1;flex:0 0 auto;
+  width:60px;height:60px;border-radius:50%;
+  display:grid;place-items:center;overflow:hidden;pointer-events:none;
+  background:linear-gradient(152deg,#4a7bf7 0%,#2b3f6b 58%,#1d2942 100%);
+  border:1px solid rgba(255,255,255,.18);
+  box-shadow:0 5px 16px rgba(30,52,120,.32), inset 0 1px 0 rgba(255,255,255,.22);
+}
+/* 圆里的线稿：浅蓝白描边（深底上要看得清），尺寸收到 74% 免得贴边 */
+.pc-fig{width:74%;height:74%;display:block}
+.pc-fig :where(rect,circle,path,line,polyline){
+  fill:none;stroke:#dbe7ff;stroke-width:8;
+  stroke-linecap:round;stroke-linejoin:round;
+}
+.pc-fig .dim{opacity:.55}
+
+.pc-hero-body{position:relative;z-index:2;min-width:0;flex:1 1 240px;
+              display:flex;flex-direction:column;gap:1px}
+/* 型号 = 横幅最大的一行（机型那行已撤掉，型号顶上第一眼的位置） */
+.pc-hero-model{font-size:17px;font-weight:800;color:var(--tx1);letter-spacing:-.01em;
+  line-height:1.24;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-hero-os{font-size:11.5px;color:var(--tx2);margin-top:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-hero-meta{font-size:10.5px;color:var(--tx3);margin-top:2px;line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 固件徽标组：BIOS / 启动模式 / 安全启动 / UEFI 证书 —— 一字排开，每枚一行内
+   「状态点 + 名 + 值」。状态点 = 真实状态（安全启动关=橙；UEFI 证书无=灰）。
+   ⚠️ 判定依据（如「检测到 Windows Boot Manager」）不占行，只在 title 里。
+   ⚠️ 用 flex 而不是等宽网格：BIOS 的值天生最长（厂商+版本），等分会被切得只剩半截。 */
+.pc-badges{
+  position:relative;z-index:2;flex:0 1 auto;
+  display:flex;flex-wrap:nowrap;gap:6px;max-width:62%;
+}
+.pc-badge{
+  display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:8px;min-width:0;
+  flex:1 1 auto;
+  background:var(--glass-sink);border:1px solid var(--stroke);
+  transition:border-color .18s,transform .18s;
+}
+.pc-badge:hover{border-color:var(--stroke-2);transform:translateY(-1px)}
+.pc-badge-d{width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:var(--tx3)}
+.pc-badge-d.ok{background:var(--ok);box-shadow:0 0 0 3px rgba(52,211,153,.16)}
+.pc-badge-d.warn{background:var(--warn);box-shadow:0 0 0 3px rgba(251,191,36,.16)}
+.pc-badge-d.info{background:var(--info);box-shadow:0 0 0 3px rgba(96,165,250,.16)}
+.pc-badge-k{font-size:10px;color:var(--tx3);flex:0 0 auto;white-space:nowrap}
+.pc-badge-v{font-size:11.5px;font-weight:700;color:var(--tx1);min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-badge-na .pc-badge-v{font-weight:400}
+html[data-theme="light"] .pc-badge-d.ok{box-shadow:0 0 0 3px rgba(10,127,87,.15)}
+html[data-theme="light"] .pc-badge-d.warn{box-shadow:0 0 0 3px rgba(163,92,7,.15)}
+
+/* ============================================================================
+   ② 面板 —— Tab 条 + 内容区合成一个区块
+   ---------------------------------------------------------------------------
+   原来 Tab 条和内容区是上下两块各自带边框、中间还留 9px 缝，像两个不相干的东西。
+   现在是一块「带标签页的面板」：标签条在面板顶上，下面就是内容，共用一套边框。
+   ============================================================================ */
+.pc-panel{
+  flex:1 1 auto;min-height:0;display:flex;flex-direction:column;
+  border:1px solid var(--stroke);border-radius:var(--r1);
+  background:linear-gradient(180deg,var(--glass) 0%,var(--glass-sink) 100%);
+  box-shadow:var(--sh1);overflow:hidden;
+}
+
+/* ---------------------------------------------------------------------------
+   Tab 条 —— 滑动高亮胶囊（不是整条跳）
+   --------------------------------------------------------------------------- */
+.pc-tabs{
+  position:relative;display:flex;gap:2px;flex:0 0 auto;
+  padding:4px;border-bottom:1px solid var(--stroke-2);
+  background:var(--glass-sink);
+}
+.pc-tabs::after{
+  content:"";position:absolute;left:4px;top:4px;bottom:4px;
+  width:calc((100% - 8px) / 8);border-radius:8px;
+  background:var(--glass-hi);border:1px solid var(--stroke-2);
+  box-shadow:var(--sh1);z-index:0;
+  transform:translateX(calc(var(--pc-tab-i,0) * 100%));
+  transition:transform .32s var(--e1);
+}
+.pc-tab{
+  position:relative;z-index:1;flex:1 1 0;min-width:0;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  padding:6px 4px;border:0;border-radius:8px;background:transparent;
+  font-family:inherit;font-size:12.5px;font-weight:600;color:var(--tx3);
+  cursor:pointer;transition:color .18s;
+}
+.pc-tab:hover{color:var(--tx2)}
+.pc-tab.on{color:var(--info)}
+.pc-tab-i{display:grid;place-items:center;opacity:.9;transition:transform .22s var(--e1)}
+.pc-tab:hover .pc-tab-i{transform:translateY(-1px)}
+html[data-motion="off"] .pc-tabs::after{transition:none}
+
+/* ---------------------------------------------------------------------------
+   ②.5 载入态 —— 「重新读取」按下之后
+   ---------------------------------------------------------------------------
+   用户 2026-10-10：「重新读取的时候做个载入动画」。
+   做法不是整页塌回骨架屏（那样横幅/Tab/清单全没了再长回来，是「闪一下」），
+   而是**旧数据留在屏幕上淡下去**，同时给三处反馈：
+     · Tab 条下沿一道扫光（位置精确，就在 2px 分隔线上）
+     · 内容区压暗并禁用点击（旧数据还在，能看出"这是在读，不是在崩"）
+     · 按钮图标转圈 + 文案换「读取中…」
+   --------------------------------------------------------------------------- */
+.pc-panel.pc-busy .pc-tabs::before{
+  content:"";position:absolute;left:0;bottom:-1px;height:2px;width:30%;border-radius:2px;
+  background:linear-gradient(90deg,transparent,var(--info),transparent);
+  animation:pc-busybar 1.05s linear infinite;z-index:2;pointer-events:none;
+}
+@keyframes pc-busybar{0%{left:-30%}100%{left:100%}}
+.pc-body{transition:opacity .2s var(--e1)}
+.pc-panel.pc-busy .pc-body{opacity:.5;pointer-events:none}
+html[data-motion="off"] .pc-panel.pc-busy .pc-tabs::before{animation:none;opacity:0}
+
+/* 读取中的按钮：图标转圈、点不动（防重复触发）。
+   ⚠️ 文案换成「读取中…」由 JS 负责（.pc-btn-t 那个 span），
+   不能直接改 button.textContent —— 那会把图标也一起抹掉。 */
+.pc-acts .btn.loading{pointer-events:none;opacity:.72}
+.pc-acts .btn.loading svg{animation:pc-spin .85s linear infinite}
+@keyframes pc-spin{to{transform:rotate(360deg)}}
+html[data-motion="off"] .pc-acts .btn.loading svg{animation:none}
+
+/* ---------------------------------------------------------------------------
+   ③ 内容区 —— flex:1 + 内部滚动 = 面板骨架不被内容撑高
+   --------------------------------------------------------------------------- */
+.pc-body{
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  padding:11px 13px;
+  display:flex;flex-direction:column;gap:10px;
+}
+/* ⚠️ 卡片的 flex-shrink 必须关掉：.pc-body 是 flex 列容器，空间不够时子项默认
+   shrink=1 会被**压扁**，表现为卡片互相重叠、环形被裁一半。宁可让它溢出滚动。
+   ⚠️ 但**最后一块例外**：窗口大（用户多半是最大化的 1920×1080）时内容区能到
+   700px 高，而内容只有 350px，下面会空出一大片 —— 用户 2026-10-10 说的
+   「卡片可以放高一点，现在没有满屏」就是这个。
+   给它 flex:1 0 auto（只能长不能缩）：有富余就撑满，内容真多了也不会被压扁。 */
+.pc-body > *{flex:0 0 auto}
+.pc-body > *:last-child{flex:1 0 auto}
+/* 内容区滚动条收细：这是兜底滚动，不该抢视线 */
+.pc-body::-webkit-scrollbar{width:8px}
+.pc-body::-webkit-scrollbar-thumb{background:var(--stroke-2);border-radius:8px}
+.pc-body::-webkit-scrollbar-track{background:transparent}
+.pc-body.pc-in > *{animation:pc-in .28s var(--e1) both}
+@keyframes pc-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+html[data-motion="off"] .pc-body.pc-in > *{animation:none}
+
+/* 卡片 */
+.pc-card{padding:12px 15px}
+/* 详情页最后一张卡撑满高度后，让字段区在卡内垂直居中 ——
+   否则内容全挤在顶部、底下空出一大片（1600×950 实测空 400px 以上），
+   比不撑满还难看。卡头（.card-t）保持贴顶，只有字段区居中。
+   ⚠️ 试过让字段行自己长高（grid-auto-rows:minmax(30px,1fr)）把高度吃掉，
+   但那样系统页会多出 56px 溢出、凭空长出滚动条 —— 宁可留白也不要滚动，改回居中。
+   ⚠️ 也试过 align-content:space-evenly：分组标题会被推得离自己的字段很远，不成立。
+   ⚠️ 只对 .pc-body > .card:last-child 生效；概要页最后一项是 .pc-ov 两栏网格，
+   走的是栏内行均分那套，不受这条影响。 */
+.pc-body > .card:last-child{display:flex;flex-direction:column}
+.pc-body > .card:last-child > .pc-grid{flex:1 1 auto;align-content:center}
+.pc-hint{margin-left:auto;font-size:11px;font-weight:400;color:var(--tx3)}
+
+/* ============================================================================
+   ⑤ 环形表盘（占比类数据：CPU/内存/磁盘占用）
+   ============================================================================ */
+.pc-donut{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto}
+.pc-donut-wrap{position:relative;width:78px;height:78px}
+.pc-donut svg{width:100%;height:100%;transform:rotate(-90deg)}
+.pc-donut-bg{fill:none;stroke:var(--stroke);stroke-width:7}
+.pc-donut-fg{fill:none;stroke:var(--info);stroke-width:7;stroke-linecap:round;
+  transition:stroke-dashoffset .85s var(--e1)}
+html[data-motion="off"] .pc-donut-fg{transition:none}
+.pc-donut-c{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:0}
+.pc-donut-n{font-size:17px;font-weight:800;color:var(--tx1);
+  font-variant-numeric:tabular-nums;line-height:1}
+.pc-donut-u{font-size:9.5px;color:var(--tx3);margin-top:1px}
+.pc-donut-l{font-size:11px;font-weight:600;color:var(--tx2)}
+.pc-gauges-na{font-size:12px;color:var(--tx3);padding:8px 0}
+
+/* ============================================================================
+   ⑥ 字段网格（label —— 值）
+   ============================================================================ */
+/* 列宽 236px —— 内容区 ~800px 时排 3 列，每格值有 ~160px，长值基本一行放得下。 */
+.pc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(236px,1fr));gap:0 22px}
+/* raw 组（环形 / 磁盘卡这类）跨整行，不然会被塞进一个网格格子里 */
+.pc-sec-raw{grid-column:1/-1;min-width:0}
+.pc-kv{
+  display:flex;align-items:baseline;gap:10px;padding:4px;min-width:0;
+  border-bottom:1px solid var(--stroke-2);border-radius:4px;
+  transition:background .16s;animation:pc-fade .34s ease both;
+}
+.pc-kv:hover{background:var(--glass-hi)}
+@keyframes pc-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+html[data-motion="off"] .pc-kv{animation:none}
+.pc-k{flex:0 0 auto;font-size:12px;color:var(--tx3);min-width:62px}
+/* 跨两列：长值（型号 / 序列号 / 明细 / 判定依据）在窄格里折行会吃掉一整行高度 */
+.pc-kv-wide{grid-column:span 2}
+/* 整行：折行超过两行的值（支持模式 6 档 / 指令集 9 项 / 操作系统全名）。
+   整行宽度单调不小于跨两列，所以折行只会变少不会变多 —— 是纯粹的改进，
+   而且能救回被 ellipsis 截掉的值（系统页「操作系统」原来就是这么丢的）。 */
+.pc-kv-full{grid-column:1/-1}
+.pc-v{flex:1 1 auto;min-width:0;font-size:13px;line-height:1.45;color:var(--tx1);
+  word-break:break-word;font-variant-numeric:tabular-nums}
+.pc-kv-strong .pc-k{color:var(--tx2);font-weight:600}
+.pc-kv-strong .pc-v{font-weight:700;font-size:13.5px}
+.pc-na{color:var(--tx3)}
+
+/* 卡内分组标题：左侧品牌渐变色条（小面积用色，不违反「一屏一色」） */
+.pc-sec{
+  grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;
+  color:var(--tx2);padding:7px 0 1px;margin-top:6px;
+  border-top:1px solid var(--stroke-2);
+}
+.pc-sec::before{content:"";width:3px;height:12px;border-radius:2px;background:var(--sp-grad)}
+.pc-sec:first-child{border-top:0;margin-top:0;padding-top:2px}
+.pc-sec .pc-sec-n{margin-left:auto;font-weight:400;color:var(--tx3);font-size:10.5px}
+
+/* ============================================================================
+   ⑦ 磁盘条目（环 + 文字，环比横条更能一眼看出「还剩多少」）
+   ============================================================================ */
+.pc-disks{display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:10px}
+.pc-disk{
+  display:flex;align-items:center;gap:11px;padding:8px 13px;border-radius:var(--r2);
+  background:var(--glass-sink);border:1px solid var(--stroke);
+  transition:border-color .18s,transform .18s;
+}
+.pc-disk:hover{border-color:var(--stroke-2);transform:translateY(-2px)}
+.pc-disk .pc-donut-wrap{width:56px;height:56px}
+.pc-disk .pc-donut-n{font-size:14px}
+.pc-disk .pc-donut-u{display:none}
+.pc-disk-i{min-width:0;flex:1}
+.pc-disk-n{font-size:12.5px;font-weight:700;color:var(--tx1);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-disk-s{font-size:11px;color:var(--tx3);margin-top:3px;
+  font-variant-numeric:tabular-nums}
+.pc-disk-m{display:inline-flex;align-items:center;gap:4px;margin-top:4px;font-size:10.5px;
+  color:var(--tx3)}
+.pc-tag{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;
+  padding:1px 7px;border-radius:999px;border:1px solid var(--stroke);
+  background:var(--glass);color:var(--tx2)}
+.pc-tag.ok{color:var(--ok);border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.1)}
+.pc-tag.warn{color:var(--warn);border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)}
+.pc-tag.danger{color:var(--danger);border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.1)}
+.pc-tag.info{color:var(--info);border-color:rgba(96,165,250,.3);background:rgba(96,165,250,.1)}
+html[data-theme="light"] .pc-tag.ok{color:#065f46;border-color:rgba(10,127,87,.34);background:rgba(10,127,87,.13)}
+html[data-theme="light"] .pc-tag.warn{color:#8a4b06;border-color:rgba(163,92,7,.34);background:rgba(245,158,11,.17)}
+html[data-theme="light"] .pc-tag.danger{color:#9f1239;border-color:rgba(207,18,68,.34);background:rgba(207,18,68,.12)}
+html[data-theme="light"] .pc-tag.info{color:#1442c8;border-color:rgba(21,80,224,.34);background:rgba(21,80,224,.12)}
+
+/* ============================================================================
+   ⑧ 主视觉行（环 + 关键数值并排）
+   ============================================================================ */
+.pc-vis{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+/* 主视觉里那枚环 78→64px：内存页「规格 3 行 + 明细 2 行」原本溢出 14px，
+   环缩一点就装下了；64px 仍然是一眼里最醒目的那块，不算缩水。
+   ⚠️ 只作用于 .pc-vis（处理器 / 内存 / 主板 / 显卡 / 网络的主视觉行），
+   概要右侧那张卡的 40px 环和硬盘页的 56px 环各有各的定尺寸，不受影响。 */
+.pc-vis .pc-donut-wrap{width:64px;height:64px}
+.pc-vis .pc-donut-n{font-size:15px}
+/* 关键数值自适应列数：宽卡片里能排 4 列就一行装完（比死写 2 列省一整行高度） */
+.pc-vstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(142px,1fr));gap:9px 22px;
+  flex:1 1 260px;min-width:0}
+.pc-vstat{display:flex;flex-direction:column;gap:1px;min-width:0}
+/* 整行格：值特别长的指标（操作系统全名）单独占一行。
+   用 1/-1 而不是 span 2 —— 不依赖当前有几列，窗口再窄也不会撑出横向滚动 */
+.pc-vstat-wide{grid-column:1/-1}
+.pc-vstat-l{font-size:11.5px;color:var(--tx3)}
+.pc-vstat-v{font-size:14px;font-weight:750;color:var(--tx1);line-height:1.2;
+  font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ============================================================================
+   ⑨ 加载骨架
+   ============================================================================ */
+.pc-skel{
+  flex:1 1 auto;min-height:180px;border-radius:var(--r1);border:1px solid var(--stroke);
+  background:linear-gradient(100deg,var(--glass-sink) 30%,var(--glass) 50%,var(--glass-sink) 70%);
+  background-size:220% 100%;animation:pc-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes pc-shimmer{from{background-position:180% 0}to{background-position:-40% 0}}
+html[data-motion="off"] .pc-skel{animation:none}
+
+/* ============================================================================
+   ⑪ 概要清单 —— 概要页主区
+   ---------------------------------------------------------------------------
+   参照主流硬件检测工具的排法：**一行一项**（图标徽章 + 灰标签 + 值 + 箭头）。
+   为什么换掉四列网格：
+     ① 四列网格省高度，但值被切碎成短串、扫读要左右来回跳；
+     ② 一行一项是「清单」，眼睛沿一条竖线往下扫即可，天然比网格疏朗；
+     ③ 行本身可点 → 进对应 Tab 看该部件全部参数。**清单即导航**，
+        不必再摆一排重叠入口（首页铁律：同一件事只给一个入口）。
+   ============================================================================ */
+.pc-ov{display:grid;grid-template-columns:minmax(0,1fr) minmax(238px,272px);
+  gap:11px;align-items:stretch}
+@media (max-width:1180px){ .pc-ov{grid-template-columns:1fr} }
+
+/* 行高 36px（图标 28 + 上下 4px 呼吸）：九行 318px + 组内间隙 + 内边距 ≈ 344px。
+   窗口大时（内容区更高）九行会**均分撑满**这块卡（flex:1 1 auto），
+   不会在卡片底部留一条空白 —— 行距跟着高度长，属于"疏朗"不是"散"。 */
+.pc-rows{
+  display:flex;flex-direction:column;gap:1px;padding:6px;
+  border-radius:var(--r1);border:1px solid var(--stroke);
+  background:var(--glass-sink);
+}
+.pc-row{
+  position:relative;display:grid;align-items:center;gap:12px;
+  grid-template-columns:auto 56px minmax(0,1fr) auto;
+  width:100%;padding:4px 10px;border:0;border-radius:9px;
+  background:transparent;font-family:inherit;text-align:left;color:inherit;
+  cursor:pointer;transition:background .18s var(--e1);
+  animation:pc-fade .34s ease both;
+  flex:1 1 auto;
+}
+/* 左侧小竖条：hover 时从中间长出来 —— 位置提示（这一行可点），不是装饰 */
+.pc-row::before{
+  content:"";position:absolute;left:2px;top:50%;width:3px;height:0;border-radius:2px;
+  background:var(--sp-grad);transform:translateY(-50%);
+  transition:height .24s var(--e1);
+}
+.pc-row:hover,.pc-row.on{background:var(--glass-hi)}
+.pc-row:hover::before,.pc-row.on::before{height:20px}
+.pc-row-ic{
+  width:28px;height:28px;border-radius:9px;display:grid;place-items:center;
+  color:var(--info);flex:0 0 auto;
+  background:linear-gradient(140deg,rgba(61,107,245,.17),rgba(34,211,238,.06));
+  border:1px solid rgba(61,107,245,.2);
+  transition:transform .24s var(--e1),box-shadow .24s var(--e1);
+}
+.pc-row:hover .pc-row-ic,.pc-row.on .pc-row-ic{transform:translateY(-1px) scale(1.06);
+  box-shadow:0 5px 14px rgba(61,107,245,.26)}
+.pc-row-k{font-size:12px;font-weight:600;color:var(--tx3);white-space:nowrap}
+.pc-row-v{display:flex;align-items:baseline;gap:9px;min-width:0;overflow:hidden}
+/* 主体与补充紧挨着（都靠左），合成一句读；补充最多占 44%，超了先截补充 ——
+   主体是「这台机是什么」，比补充更该完整。两边都挂 title 兜底。
+   注意：主体不要设 flex-grow，否则它撑满整行、把补充顶到最右边，
+   各行的补充长短不一，右对齐后起点参差，反而显得乱。 */
+.pc-row-v b{font-weight:650;font-size:13.5px;color:var(--tx1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
+.pc-row-v i{font-style:normal;font-size:12px;color:var(--tx3);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:44%}
+.pc-row-v .pc-na{font-weight:400;font-size:13px}
+.pc-row-a{display:grid;place-items:center;color:var(--tx3);opacity:.45;
+  transition:transform .22s var(--e1),opacity .22s var(--e1),color .22s var(--e1)}
+.pc-row:hover .pc-row-a,.pc-row.on .pc-row-a{transform:translateX(3px);opacity:1;color:var(--info)}
+html[data-motion="off"] .pc-row,html[data-motion="off"] .pc-row *{animation:none}
+
+/* ---------------------------------------------------------------------------
+   ⑫ 右侧「实时状态」—— 一张卡，一行一个指标
+   ---------------------------------------------------------------------------
+   一行 = 图标 + 指标名 + 读数（靠右） / 下面一行小字补充 / 最右 40px 环。
+   环的弧长与占用率一一对应（数值↔视觉，不是装饰）；环色同阈值：
+   <65% 蓝 / ≥65% 橙 / ≥85% 红，与左上角光斑同色。
+   --------------------------------------------------------------------------- */
+.pc-side{flex:0 0 auto;padding:11px 13px;display:flex;flex-direction:column}
+.pc-side .card-t{margin-bottom:2px}
+/* 行也均分撑满：窗口大时右侧卡跟着左栏一样高，五行之间拉开呼吸，
+   不会出现「左边一长条、右边半截、下面一块空白」 */
+.pc-srows{display:flex;flex-direction:column;flex:1 1 auto}
+.pc-srow{
+  position:relative;display:flex;align-items:center;gap:12px;
+  padding:6px 2px;border-bottom:1px solid var(--stroke-2);
+  animation:pc-fade .34s ease both;
+  flex:1 1 auto;
+}
+.pc-srow:last-child{border-bottom:0}
+/* 右上角柔和光斑：给环形垫一层底。--gc 由占用率决定（数值↔视觉） */
+.pc-srow::after{
+  content:"";position:absolute;right:-24px;top:-14px;width:86px;height:86px;
+  border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,var(--gc,transparent),transparent 68%);
+}
+.pc-srow-x{flex:1 1 auto;min-width:0;position:relative;z-index:1;
+  display:flex;flex-direction:column;gap:2px}
+.pc-srow-t{display:flex;align-items:baseline;gap:6px;min-width:0}
+.pc-srow-t svg{color:var(--tx3);align-self:center;flex:0 0 auto}
+.pc-srow-l{font-size:11.5px;font-weight:600;color:var(--tx3);flex:0 0 auto}
+.pc-srow-t b{margin-left:auto;font-size:13.5px;font-weight:800;color:var(--tx1);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pc-srow-s{font-size:10.5px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 行内那枚环缩小到 40px：一行 52px，五行 260px（原来五张卡叠到 460px） */
+.pc-srow .pc-donut{position:relative;z-index:1;flex:0 0 auto;gap:0}
+.pc-srow .pc-donut-wrap{width:40px;height:40px}
+.pc-srow .pc-donut-n{font-size:12.5px}
+.pc-srow .pc-donut-u{font-size:7.5px;margin-top:0}
+.pc-srow .pc-donut-l{display:none}
+/* 划过清单某一行 → 右边对应的指标行跟着亮（两者讲的是同一个部件，是真实对应） */
+.pc-srow.on{background:var(--glass-hi);border-radius:8px}
+html[data-motion="off"] .pc-srow{animation:none}
+.pc-side-na{padding:10px 2px;color:var(--tx3);font-size:12.5px;line-height:1.6}
+
+/* ============================================================================
+   ⑩ 窄屏：横幅换行、徽标独占一行、Tab 可横向滚
+   ---------------------------------------------------------------------------
+   ⚠️ 这里原来写的是 .pc-hero{flex-direction:column}，实测是个坑：
+   .pc-hero-body 的 flex:1 1 240px 是给**横向**用的（240px 指宽度），
+   一旦容器变竖排，flex-basis 就变成**高度** —— 横幅被撑到 306px，
+   内容区只剩 66px（1020×660 最小窗口下实测，几乎什么都看不见）。
+   现在改成 flex-wrap：机型徽章和标题留在第一行，固件徽标整宽掉到第二行，
+   横幅约 129px，内容区能拿回 ~240px。
+   ============================================================================ */
+@media (max-width:1080px){
+  .pc-hero{flex-wrap:wrap;gap:9px 12px}
+  .pc-hero-body{flex:1 1 200px}
+  .pc-badges{flex:1 1 100%;max-width:100%;flex-wrap:wrap}
+  .pc-tabs{overflow-x:auto}
+  .pc-tab{flex:0 0 auto;padding:8px 12px}
+  .pc-tabs::after{display:none}
+}

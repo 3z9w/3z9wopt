@@ -1,0 +1,240 @@
+/* ============================================================================
+   opt.css —— 系统优化页样式（2026-10-11 · 独立模块）
+   ---------------------------------------------------------------------------
+   这一页的样式和逻辑一起从 ui-prototype.html 里拆了出来（见 design/opt.js）。
+   载入方式跟 pcinfo 一个路子：主文件 <head> 里 <link> 引入本文件，
+   逻辑走主文件的「系统优化页独立文件加载器」（同步 XHR + eval）。
+   以后改这一页只碰 opt.css / opt.js，不会牵动 5000 行的主文件。
+
+   配色与质感一律走主文件的全局变量：
+     --glass / --glass-hi / --glass-sink / --glass-btn / --stroke / --stroke-2 /
+     --tx1 --tx2 --tx3 / --ok / --warn / --danger / --info / --acc / --acc-tx /
+     --sp-grad / --sp-tx / --r1..4 / --sh1..3 / --glow / --e1
+   亮色 + 暗色两套主题自动跟随，这里不写死主题色。
+   唯一写死的颜色是下面那个进度环的 SVG 渐变 stop（CSS 变量是 background 值，
+   不能直接当 SVG stroke 用），取的是与 --sp-grad 同一组品牌色。
+   ============================================================================ */
+
+/* ══ 1 概览横幅 ════════════════════════════════════════════════════════════ */
+.opt-hero{
+  position:relative;overflow:hidden;flex:0 0 auto;
+  display:flex;align-items:center;gap:16px;
+  padding:13px 17px;margin-bottom:12px;border-radius:var(--r1);
+  border:1px solid var(--stroke);box-shadow:var(--sh1);
+  background:
+    radial-gradient(520px 190px at 2% -60%, rgba(61,107,245,.16), transparent 62%),
+    radial-gradient(420px 180px at 98% 160%, rgba(34,211,238,.10), transparent 62%),
+    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+}
+/* 常驻流光：斜向高光缓慢扫过（跟本机配置页横幅一个手法，强度分主题 —— 同一片 50% 白
+   在浅底上只是「亮了一道」，在深底上会变成一条白带横在文字上）。 */
+.opt-hero::after{
+  content:"";position:absolute;top:-60%;left:-70%;width:34%;height:220%;
+  pointer-events:none;z-index:0;transform:rotate(12deg);
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.16) 45%,transparent);
+  animation:opt-sweep 8.5s linear infinite;
+}
+html[data-theme="light"] .opt-hero::after{
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5) 45%,transparent);
+}
+@keyframes opt-sweep{0%{left:-70%}58%,100%{left:130%}}
+html[data-motion="off"] .opt-hero::after{animation:none;opacity:0}
+
+/* 圆形图标 + 一圈缓慢环绕的高光弧（科技感都在这，别加更多动效了） */
+.opt-hero-fig{
+  position:relative;z-index:1;flex:0 0 auto;width:52px;height:52px;border-radius:50%;
+  display:grid;place-items:center;color:var(--info);
+  background:var(--glass-hi);border:1px solid var(--stroke-2);
+}
+.opt-hero-fig::before{
+  content:"";position:absolute;inset:-2px;border-radius:50%;
+  background:conic-gradient(from 0deg,transparent 0 60%,rgba(96,165,250,.95) 76%,transparent 90% 100%);
+  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));
+          mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));
+  animation:opt-orbit 6.5s linear infinite;
+}
+@keyframes opt-orbit{to{transform:rotate(360deg)}}
+html[data-motion="off"] .opt-hero-fig::before{animation:none;opacity:0}
+
+.opt-kpis{position:relative;z-index:1;display:flex;align-items:center;gap:18px;min-width:0;flex:0 1 auto}
+.opt-kpi{display:flex;flex-direction:column;min-width:0}
+.opt-kpi + .opt-kpi{border-left:1px solid var(--stroke);padding-left:18px}
+.opt-kpi b{font-size:20px;font-weight:680;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.opt-kpi span{font-size:11.5px;color:var(--tx3);margin-top:2px;white-space:nowrap}
+.opt-hero-r{position:relative;z-index:1;margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+
+/* ══ 2 工具条：搜索 + 预设筛选 ═════════════════════════════════════════════ */
+/* 搜索框独占一行（宽度 = 上方 hero 卡 = 下方操作条，三者在 .page 的 stretch 下天然同宽） */
+.opt-tools{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex:0 0 auto}
+.opt-search{
+  display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;height:34px;padding:0 12px;
+  border-radius:var(--r2);background:var(--glass-sink);border:1px solid var(--stroke);
+  color:var(--tx3);transition:.18s;
+}
+.opt-search:focus-within{border-color:var(--stroke-2);box-shadow:0 0 0 3px var(--glow);color:var(--info)}
+.opt-search input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--tx1);font:inherit;font-size:13px}
+.opt-search input::placeholder{color:var(--tx3)}
+/* 2026-10-11：「全部 / 基本 / 深度」三个切换按钮整套删除（底部操作条已有基本/深度优化按钮，
+   两套入口重复）。.opt-seg* 样式随之删除 —— 有朝一日要加回来，别只加 HTML 忘了 CSS。 */
+
+/* ══ 3 两栏：左清单 / 右「已选中」 ═════════════════════════════════════════ */
+.opt-wrap{display:grid;grid-template-columns:minmax(0,1fr) 252px;gap:12px;align-items:start;margin-bottom:14px}
+@media(max-width:1140px){
+  .opt-wrap{grid-template-columns:minmax(0,1fr)}
+  .opt-side{position:static;max-height:none}
+}
+.opt-list{min-width:0}
+
+/* ══ 4 分类卡（默认折叠） ═════════════════════════════════════════════════ */
+.opt-cat{
+  border-radius:var(--r2);border:1px solid var(--stroke);background:var(--glass-sink);
+  margin-bottom:8px;overflow:hidden;transition:border-color .2s,box-shadow .2s;
+}
+.opt-cat:hover{border-color:var(--stroke-2)}
+.opt-cat.open{border-color:var(--stroke-2);box-shadow:var(--sh1)}
+.opt-cat-h{display:flex;align-items:center;gap:11px;padding:12px 14px;cursor:pointer;user-select:none;transition:background .18s}
+.opt-cat-h:hover{background:var(--glass-hi)}
+/* 折叠箭头用纯 CSS 三角，不占图标位、也不用多引一个 ico() */
+.opt-caret{flex:0 0 10px;display:grid;place-items:center;color:var(--tx3);transition:transform .24s var(--e1),color .2s}
+.opt-caret::before{content:"";width:0;height:0;border:4.5px solid transparent;border-left-color:currentColor;margin-left:2px}
+.opt-cat.open .opt-caret{transform:rotate(90deg);color:var(--info)}
+.opt-cat-n{font-size:13.5px;font-weight:600;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.opt-cat-s{margin-left:auto;font-size:11.5px;color:var(--tx3);white-space:nowrap;font-variant-numeric:tabular-nums}
+.opt-cat-s b{color:var(--ok);font-weight:600}
+.opt-prog{position:relative;flex:0 0 48px;height:4px;border-radius:var(--r4);background:var(--glass-hi);overflow:hidden}
+.opt-prog i{
+  position:relative;display:block;height:100%;border-radius:var(--r4);
+  background:linear-gradient(90deg,#0d9488,var(--ok));transition:width .5s var(--e1);
+}
+.opt-prog i::after{
+  content:"";position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);
+  transform:translateX(-100%);animation:opt-shine 2.6s ease-in-out infinite;
+}
+@keyframes opt-shine{0%{transform:translateX(-100%)}62%,100%{transform:translateX(240%)}}
+html[data-motion="off"] .opt-prog i::after{animation:none;opacity:0}
+/* 展开/收起用 display 切换：行本身带入场动画，展开时自动错峰浮现（不用算 max-height，
+   分类项数以后变了也不会被写死的上限切掉） */
+.opt-cat-b{display:none;padding:2px 6px 8px}
+.opt-cat.open .opt-cat-b{display:block}
+
+/* ══ 5 单项（三态：未动 / 待应用 / 已优化） ═══════════════════════════════ */
+.opt-row{
+  position:relative;display:flex;align-items:center;gap:11px;
+  padding:9px 12px;margin-bottom:5px;border-radius:var(--r2);
+  border:1px solid transparent;background:transparent;cursor:pointer;
+  transition:background .16s,border-color .16s,box-shadow .16s;
+  animation:opt-row-in .26s var(--e1) backwards;
+}
+@keyframes opt-row-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+html[data-motion="off"] .opt-row{animation:none}
+.opt-row:hover{background:var(--glass-hi);border-color:var(--stroke)}
+.opt-row.sel{background:rgba(96,165,250,.10);border-color:rgba(96,165,250,.42);box-shadow:0 8px 22px -16px rgba(96,165,250,.95)}
+.opt-row.done{background:rgba(52,211,153,.07);border-color:rgba(52,211,153,.30)}
+html[data-theme="light"] .opt-row.sel{background:rgba(21,80,224,.075);border-color:rgba(21,80,224,.36)}
+html[data-theme="light"] .opt-row.done{background:rgba(10,127,87,.07);border-color:rgba(10,127,87,.32)}
+.opt-row.sel::before,.opt-row.done::before{
+  content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;
+}
+.opt-row.sel::before{background:var(--info)}
+.opt-row.done::before{background:var(--ok)}
+
+/* 勾选框：未选=空心方框；待应用=品牌蓝勾；已优化=绿勾。勾是对勾路径描出来的（有描边动效） */
+.opt-box{
+  position:relative;flex:0 0 18px;width:18px;height:18px;border-radius:6px;
+  display:grid;place-items:center;transition:.18s var(--e1);
+  border:1.5px solid var(--stroke-2);background:var(--glass-sink);
+}
+.opt-box svg{transform:scale(.45);opacity:0;transition:transform .2s var(--e1),opacity .16s}
+.opt-box svg path{stroke-dasharray:17;stroke-dashoffset:17;transition:stroke-dashoffset .26s .05s ease}
+.opt-row.sel .opt-box{background:linear-gradient(135deg,#5b9bff,#0f4cff);border-color:transparent;box-shadow:0 0 0 4px rgba(96,165,250,.16)}
+.opt-row.done .opt-box{background:linear-gradient(135deg,#10b981,#059669);border-color:transparent}
+.opt-row.sel .opt-box svg,.opt-row.done .opt-box svg{transform:none;opacity:1}
+.opt-row.sel .opt-box svg path,.opt-row.done .opt-box svg path{stroke-dashoffset:0}
+
+.opt-row-t{flex:1;min-width:0}
+.opt-row-n{display:block;font-size:13px;font-weight:520;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt-row-d{display:block;font-size:11.5px;color:var(--tx3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt-chips{display:flex;align-items:center;gap:5px;flex:0 0 auto}
+
+/* ══ 6 右侧「已选中」 ═════════════════════════════════════════════════════ */
+.opt-side{
+  position:sticky;top:0;z-index:3;display:flex;flex-direction:column;
+  /* 2026-10-11 加高两次（用户嫌矮）：max-height -320px → -268px → -214px。
+     ⚠️ min-height 才是**空态**（没勾任何项）时真正生效的那个 —— 只改 max-height 空态不会变高。
+     两者都抬：空态 180 → 260，有内容时上限再 +54。 */
+  max-height:calc(100vh - 214px);min-height:260px;
+  border-radius:var(--r1);border:1px solid var(--stroke);background:var(--glass-sink);
+  box-shadow:var(--sh1);overflow:hidden;
+}
+.opt-side-h{
+  display:flex;align-items:center;gap:13px;padding:13px 14px;
+  border-bottom:1px solid var(--stroke);background:linear-gradient(120deg,var(--glass-hi),transparent);
+}
+.opt-ring{position:relative;flex:0 0 62px;height:62px;display:grid;place-items:center}
+.opt-ring svg{display:block}
+.opt-ring .rg{filter:drop-shadow(0 0 7px var(--glow));animation:opt-ring .95s var(--e1) backwards}
+@keyframes opt-ring{from{stroke-dashoffset:163.4}}
+html[data-motion="off"] .opt-ring .rg{animation:none}
+.opt-ring-tx{position:absolute;inset:0;display:grid;place-items:center;font-size:13px;font-weight:680;font-variant-numeric:tabular-nums}
+.opt-side-t{font-size:12.5px;font-weight:600}
+.opt-side-b{font-size:11.5px;color:var(--tx3);margin-top:3px;font-variant-numeric:tabular-nums}
+.opt-side-b b{color:var(--ok);font-weight:600}
+.opt-side-l{flex:1;overflow:auto;padding:4px 12px 6px}
+.opt-side-i{
+  display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12.5px;
+  border-bottom:1px solid var(--stroke);animation:opt-row-in .22s var(--e1) backwards;
+}
+.opt-side-i:last-child{border-bottom:0}
+.opt-side-i span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt-side-x{
+  flex:0 0 20px;width:20px;height:20px;border-radius:6px;display:grid;place-items:center;
+  color:var(--tx3);cursor:pointer;transition:.15s;
+}
+.opt-side-x:hover{background:rgba(251,113,133,.15);color:var(--danger)}
+.opt-side-e{padding:20px 12px;text-align:center;font-size:12px;color:var(--tx3);line-height:1.7}
+/* 空态里的操作指引：蓝色高亮（= 勾选态语义色），别跟上面那行灰字一样沉下去 */
+.opt-side-tip{display:inline-block;margin-top:5px;color:var(--info);font-weight:650;font-size:12.5px}
+.opt-side-f{padding:10px 14px;border-top:1px solid var(--stroke);font-size:11.5px;color:var(--tx3);line-height:1.7}
+.opt-side-f b{color:var(--warn);font-weight:600}
+
+/* ══ 7 底部操作条（吸底） ═════════════════════════════════════════════════ */
+/* .opt-sp 把「进度 + 操作条」顶到页面底部；内容长时它缩成 0，不占位 */
+.opt-sp{flex:1 1 auto;min-height:0}
+.opt-bar{
+  position:sticky;bottom:-1px;z-index:8;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:11px 14px;border-radius:14px;
+  background:var(--glass-sink);border:1px solid var(--stroke);
+  box-shadow:0 -10px 26px -16px rgba(0,0,0,.55);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+}
+html[data-theme="light"] .opt-bar{box-shadow:0 -10px 26px -18px rgba(11,26,62,.34)}
+.opt-bar-sp{flex:1 1 auto;min-width:6px}
+.opt-bar-sep{width:1px;height:18px;background:var(--stroke);margin:0 3px;flex:0 0 auto}
+.opt-bar-n{font-size:12.5px;color:var(--tx2);white-space:nowrap}
+.opt-bar-n b{color:var(--info);font-weight:680;font-variant-numeric:tabular-nums}
+/* 底部两个预设按钮（一键勾选基本/深度优化）：用户要求"颜色突出"。
+   用品牌渐变，跟同排的次要按钮（全选 / 重置 / 全部恢复）拉开档次；图标是 bolt（闪电=一键）。 */
+.opt-pre{
+  background:var(--sp-grad);color:var(--sp-tx);font-weight:650;
+  border-color:transparent;box-shadow:var(--sh1);
+}
+.opt-pre:hover{filter:brightness(1.08)}
+@media(max-width:1140px){
+  .opt-bar-n{display:none}
+  .opt-bar-sp{display:none}
+}
+
+/* ══ 8 应用进度 ══════════════════════════════════════════════════════════ */
+.opt-run{
+  margin-top:10px;padding:13px 15px;border-radius:var(--r2);
+  background:var(--glass-sink);border:1px solid var(--stroke);box-shadow:var(--sh1);
+  animation:opt-row-in .24s var(--e1) backwards;
+}
+/* 操作条一旦出现，进度块就贴着它；两者一起被 .opt-sp 顶到底部 */
+.opt-run + .opt-bar{margin-top:8px}
+.opt-run-h{display:flex;align-items:center;gap:10px;font-size:13px}
+.opt-run-h b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt-run-h em{margin-left:auto;font-style:normal;font-size:12px;color:var(--tx3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.opt-run .bar{margin-top:9px}

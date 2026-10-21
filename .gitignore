@@ -1,0 +1,44 @@
+# 构建产物与开发用物（不进版本库）
+bin/
+*.exe
+_devtools/
+
+# 私人物料：站长确认「赞赏码可以保留」→ 只排除个人微信 / 微信群二维码
+#   （其他素材按 frontend/dist/README.md 的约定放回即可自动出现）
+#
+# 注意：design/_assets/ 下还有一份同源的个人微信码备份，同样要排除，
+#       否则会随 design/ 目录一起进版本库（编译不依赖它，go:embed 只读 frontend/dist/）。
+frontend/dist/weixin-qr.png
+frontend/dist/wxgroup-qr.png
+design/_assets/weixin-qr.png
+design/_assets/wxgroup-qr.png
+
+# 历史副本 / 原型留档（真源是 design/ui-prototype.html）
+design/ui-prototype.baseline-*.html
+frontend/dist/index.html
+
+# 杂项
+*.log
+*.tmp
+Thumbs.db
+.DS_Store
+# 维护者本地文档（给自己看的，不随公开仓库分发）
+PUBLISHING.md
+如何发布-手把手.md
+两台电脑同步-手把手.md
+发布前待修清单.md
+项目交接.md
+测试报告_*.md
+
+# 官网整站不进版本库：index.html / dl.php / assets / sitemap / version.json 都是线上
+# 正在跑的站点结构，公开等于把后台布局交出去；下载包走 GitHub Releases；
+# data/ 里是真实下载量等运营数据，属私密统计。
+# 唯一对外需要的是 6 张功能截图 —— 已单独复制到 docs/img/，README 引那里。
+opt.3z9w.com/
+
+# 工作区会话记录（含本机绝对路径等私密信息，不随公开仓库分发）
+.workbuddy/
+
+# 发布工作目录：使用说明里写了作者微信号 / QQ 群号，本次更新与构建台账是内部
+# 发布记录 —— 都不属于开源范围。（根目录的 更新记录.md 是给用户看的，那份要留）
+发布/

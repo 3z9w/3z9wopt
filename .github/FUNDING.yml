@@ -1,0 +1,5 @@
+# 仓库页顶部会出现的「Sponsor」按钮配置
+# 说明：custom 里的链接会以「赞助」入口显示在仓库顶部与侧栏，是很好的品牌/官网曝光位
+custom:
+  - "https://www.3z9w.com"
+  - "https://www.3z9w.com/dashu"
