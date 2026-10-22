@@ -12,7 +12,7 @@
 - License: [GPLv3](LICENSE) — you may use, modify and distribute it freely, but if you distribute a modified version you must release your source under GPLv3 as well
 - Website: <https://www.3z9w.com>
 - Download page: <https://opt.3z9w.com>
-- Source: <https://github.com/3z9w/3z9wopt>
+- Source: <https://github.com/3z9w/3z9wopt> (Gitee mirror: <https://gitee.com/opt3z9w/3z9wopt>)
 - 中文说明：[README.md](README.md)
 
 ## Features

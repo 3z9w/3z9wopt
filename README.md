@@ -4,6 +4,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D4.svg)](#)
 [![Language](https://img.shields.io/badge/language-Go%20%2B%20Wails-00ADD8.svg)](#)
 [![GitHub](https://img.shields.io/badge/GitHub-3z9w%2F3z9wopt-181717.svg)](https://github.com/3z9w/3z9wopt)
+[![Gitee](https://img.shields.io/badge/Gitee-opt3z9w%2F3z9wopt-C71D23.svg)](https://gitee.com/opt3z9w/3z9wopt)
 
 
 > **Windows 系统优化工具箱** —— 清理垃圾、按需优化、管理启动项与驱动、看磁盘占用、读蓝屏原因。
@@ -17,7 +18,7 @@
   已发布的 1.0 版本维持原样，不再单独开源。
 - **官网**：<https://www.3z9w.com>（介绍、使用文档、远程服务）
 - **发布页 / 下载**：<https://opt.3z9w.com>（最新版、体积与 SHA256 校验值、更新记录）
-- **开源仓库**：<https://github.com/3z9w/3z9wopt>
+- **开源仓库**：<https://github.com/3z9w/3z9wopt>（主）／ Gitee 镜像 <https://gitee.com/opt3z9w/3z9wopt>（同一份代码，国内访问快）
 - **系统要求**：Windows 10 22H2 / 11（本机实测 10.0.19045）+ WebView2 Runtime
 - **许可**：[GPLv3](LICENSE)（可自由使用、修改、分发，含商用；**二次分发必须同样开源**）
 
@@ -79,8 +80,8 @@
 
 ## 下载与使用
 
-> 最新版：[Releases](https://github.com/3z9w/3z9wopt/releases) 或发布页 <https://opt.3z9w.com>。
-> 也可以从源码构建（见下）。
+> 最新版：[Releases](https://github.com/3z9w/3z9wopt/releases) 或发布页 <https://opt.3z9w.com>（国内直连）。
+> Gitee 镜像 <https://gitee.com/opt3z9w/3z9wopt> 上是同一份源码。也可以从源码构建（见下）。
 
 使用建议：
 - 第一次用，先在「工具库 → 创建系统还原点」建一个还原点（软件内也有入口）；
