@@ -352,8 +352,17 @@ func suMarkInvalid(it *StartupItem) {
 	if exe == "" || fileExists(exe) {
 		return
 	}
-	it.Advice = "delete"
-	it.Why = "这个启动项指向的程序已经不在了，留着也不会再启动，建议清理掉"
+	// ⚠️ 服务不支持删除（suDelete 对 svc 直接报错：删错服务会让系统组件失效）。
+	// 以前这里一律标 delete，于是失效服务在界面上显示「建议删除」，
+	// 用户点了必然弹「服务不支持删除」—— 一个点了就报错的按钮。
+	// 失效服务只能走禁用：它启动时必然失败，禁掉省掉一次无谓的尝试。
+	if it.Kind == "svc" {
+		it.Advice = "disable"
+		it.Why = "这个服务指向的程序已经不在了，每次开机都会启动失败；服务不支持删除，只能禁用"
+	} else {
+		it.Advice = "delete"
+		it.Why = "这个启动项指向的程序已经不在了，留着也不会再启动，建议清理掉"
+	}
 	it.Sys = false
 	if !strings.Contains(it.Loc, "无效项") {
 		it.Loc += " · 无效项"

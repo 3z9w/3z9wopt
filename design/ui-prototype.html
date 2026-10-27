@@ -5080,7 +5080,11 @@ function opUndoStartup(ts){
     let done = 0;
     const step = function(k){
       if(k >= ids.length){ toast('已开回 ' + done + ' 个自启项', 'ok'); loadOpLog(); if(window.suLoad) window.suLoad(); return; }
-      callGo('SetStartupEnable', ids[k], true).then(function(msg){ if(!msg) done++; step(k + 1); }).catch(function(){ step(k + 1); });
+      /* ⚠️ 成败只看 then / catch，不看返回值：后端 SetStartupEnable 成功时返回的是
+         **项目名**（非空），失败才走 reject。这里原来写 if(!msg) done++ —— 成功反而
+         不计数，一次全部开回来了还提示"已开回 0 个自启项"（2026-10-27 审查发现，
+         startup.js 的 suToggle 早年踩过同一个坑）。 */
+      callGo('SetStartupEnable', ids[k], true).then(function(){ done++; step(k + 1); }).catch(function(){ step(k + 1); });
     };
     step(0);
   };

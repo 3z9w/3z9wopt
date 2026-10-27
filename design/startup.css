@@ -9,48 +9,21 @@
 /* ⚠️ .page 是 flex 列容器：页面顶层块必须显式 flex:0 0 auto，否则高度不够时被
    **压缩**（实测内容区被压成 41px、里面的按钮 getBoundingClientRect 全是 0 ——
    看着就是"按钮不见了 / 点了没反应"，跟 disk.css / opt.css 同一个坑）。 */
-.su-guide,.su-bar,.su-list{flex:0 0 auto}
+.su-bar,.su-list{flex:0 0 auto}
 
-/* ── 1 引导卡（说清「开关影响什么」，不是给结论）───────────────────────── */
-.su-guide{
-  position:relative;overflow:hidden;
-  display:flex;align-items:center;gap:16px;padding:14px 18px;
-  border-radius:var(--r1);margin-bottom:11px;border:1px solid var(--stroke);
-  background:
-    radial-gradient(560px 200px at 3% -55%, rgba(61,107,245,.16), transparent 60%),
-    radial-gradient(440px 190px at 97% 150%, rgba(34,211,238,.11), transparent 60%),
-    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
-  box-shadow:var(--sh1);
-}
-.su-guide-ico{
-  width:42px;height:42px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;
-  color:var(--info);
-  background:linear-gradient(140deg,rgba(61,107,245,.17),rgba(34,211,238,.06));
-  border:1px solid rgba(61,107,245,.2);
-}
-.su-guide-main{flex:1 1 240px;min-width:0}
-/* 三条要点：三个竖线分区，不做卡片（做成卡片就是「又一大块」）。
-   2026-10-12 引导卡标题整行删掉后，这里就是引导卡的全部内容，所以不再留 9px 上间距，
-   靠 .su-guide 的 align-items:center 垂直居中即可。 */
-.su-guide-grid{list-style:none;margin:0;padding:0;
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 14px}
-.su-guide-grid li{position:relative;padding-left:11px;border-left:2px solid var(--stroke-2);
-  transition:border-color .2s var(--e1)}
-.su-guide-grid li:hover{border-left-color:var(--info)}
-.su-guide-grid .k{display:block;font-size:10.5px;font-weight:700;color:var(--info);letter-spacing:.4px}
-.su-guide-grid .v{display:block;font-size:11.5px;color:var(--tx3);line-height:1.5}
-.su-guide-act{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
-.su-cta-hint{font-size:11px;color:var(--tx3);line-height:1.4;white-space:nowrap}
-.su-cta-hint.hot{color:var(--warn);font-weight:700}
-/* 有事才高亮成橙红（唯一一个警示色，其余一律蓝）：平时是安静的玻璃按钮 */
-.btn.su-cta.hot{background:linear-gradient(135deg,#fb923c,#ef4444);color:#fff;border-color:transparent;
-  box-shadow:0 4px 14px rgba(239,68,68,.3)}
-.btn.su-cta.hot:hover:not(:disabled){filter:brightness(1.06);color:#fff}
-.btn.su-cta.hot svg{color:#fff}
-.btn.su-cta b{font-size:11.5px;padding:1px 8px;border-radius:20px;font-variant-numeric:tabular-nums;
-  background:var(--glass-hi)}
-.btn.su-cta.hot b{background:rgba(255,255,255,.26)}
-.btn.su-cta.muted b{display:none}
+/* ── 0 页头压成一行（2026-10-26）──────────────────────────────────────────
+   这一页的主体是列表，标题 + 副标题各占一行（共 78px 含 margin）太奢侈。
+   其他页面不动：page-head 是全局公共结构，只在本页加 .su-head 覆盖。 */
+.su-head{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;
+  flex:0 0 auto;min-width:0}
+.su-head .page-title{font-size:19px;line-height:1.25;flex:0 0 auto}
+.su-head .page-sub{margin-top:0;font-size:12px;line-height:1.3;flex:1 1 auto;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* 2026-10-26 晚：原来的第 1 块「引导卡」（管什么 / 关掉后 / 改错了，右侧挂一键优化）
+   整块删掉了。理由见 startup.js renderStartup 里的注释：按钮挪走后这张卡和按钮
+   下方的说明重复，且把列表挤到第一屏之外。三条要点里独有的一句并进了页头副标题。
+   连带删掉只服务于它的 .su-cta-hint / .btn.su-cta（JS 里已无引用）。 */
 
 /* ── 2 工具条卡（分类分段 + 工具按钮同一张卡）─────────────────────────── */
 .su-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;margin-bottom:11px;flex-wrap:wrap}
@@ -88,7 +61,12 @@
 /* ── 3 列表（表头 + 行）──────────────────────────────────────────────── */
 .su-list{border-radius:var(--r1);border:1px solid var(--stroke);background:var(--glass-sink);
   box-shadow:var(--sh1);overflow:hidden;padding:4px 10px}
-.su-head{display:flex;align-items:center;gap:12px;padding:6px 10px 8px;
+/* ⚠️ 列表表头是 .su-thead，不是 .su-head。
+   2026-10-27 审查发现：页头（标题 + 副标题）本来叫 .su-head，表头也叫 .su-head，
+   两条规则同名同类叠在一起 —— 页头被追加了 6px 上内边距、10px 左内边距和一条下边框
+   （标题因此和下方卡片差 10px 对不齐），表头则继承了页头的 margin-bottom:12px。
+   两边都"看着还行"，但改任何一边都会把另一边带歪。所以表头单独命名。 */
+.su-thead{display:flex;align-items:center;gap:12px;padding:6px 10px 8px;
   border-bottom:1px solid var(--stroke-2)}
 .su-h{border:0;background:transparent;font:inherit;font-size:11.5px;font-weight:650;
   color:var(--tx3);cursor:pointer;padding:0;display:inline-flex;align-items:center;gap:4px;
@@ -100,18 +78,23 @@
 .su-h-adv{width:92px;flex:0 0 auto}
 .su-h-state{width:78px;flex:0 0 auto}
 /* 占位：让表头与行的「图标 / 开关 / 更多」三列对齐 */
-.su-head .su-hico{flex:0 0 auto;height:1px}
-.su-head .su-hico:nth-of-type(1){width:38px}
-.su-head .su-hico:nth-of-type(2){width:40px}
-.su-head .su-hico:nth-of-type(3){width:28px}
+.su-thead .su-hico{flex:0 0 auto;height:1px}
+.su-thead .su-hico:nth-of-type(1){width:38px}
+.su-thead .su-hico:nth-of-type(2){width:40px}
+.su-thead .su-hico:nth-of-type(3){width:28px}
 
+/* 行入场动画只在「这一页/这批数据第一次画出来」时播（.su-list 带 anim-in）。
+   播一次是有意的：列表刚出现时有个落位感。但整表重建是很多条路径都会走的
+   （拨开关、改排序、诊断回来），每走一次就让几十行一起重播淡入 + 上移 5px ——
+   那不是反馈，是整页在闪。所以改成由外层开关控制，重建时默认不播。 */
 .su-row{display:flex;align-items:center;gap:12px;padding:9px 10px;
-  border-bottom:1px solid var(--stroke);position:relative;transition:background .12s;
-  animation:suRowIn .22s var(--e1) backwards}
+  border-bottom:1px solid var(--stroke);position:relative;transition:background .12s}
+.su-list.anim-in .su-row{animation:suRowIn .22s var(--e1) backwards}
 .su-row:last-child{border-bottom:0}
 .su-row:hover{background:var(--glass-hi)}
 @keyframes suRowIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
-html[data-motion="off"] .su-row{animation:none}
+html[data-motion="off"] .su-row,
+html[data-motion="off"] .su-list.anim-in .su-row{animation:none}
 /* 该动手的行：左侧红条 + 淡红底，扫一眼就知道重点在哪 */
 .su-row.su-hot{background:linear-gradient(90deg,rgba(239,68,68,.08),rgba(239,68,68,0) 62%)}
 .su-row.su-hot::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;
@@ -123,9 +106,14 @@ html[data-motion="off"] .su-row{animation:none}
 .su-ico img{width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .2s}
 .su-ico img.in{opacity:1}
 .su-ico svg{color:var(--tx3)}
-/* 取不到图标时的首字母头像：每一项都得有图标，不然列表看着断断续续 */
+/* 取不到图标时的首字母头像：每一项都得有图标，不然列表看着断断续续。
+   色相来自 --fbh（JS 按名字哈希），亮度和饱和度由主题决定 ——
+   深浅两套各给一组，切主题立刻生效，不用等列表重绘。 */
 .fb-l{width:100%;height:100%;border-radius:9px;display:grid;place-items:center;
-  font-size:15px;font-weight:800}
+  font-size:15px;font-weight:800;
+  background:hsl(var(--fbh,212) 70% 92%);color:hsl(var(--fbh,212) 65% 38%)}
+html[data-theme="dark"] .fb-l{
+  background:hsl(var(--fbh,212) 32% 26%);color:hsl(var(--fbh,212) 72% 78%)}
 .su-main{flex:1;min-width:0}
 .su-nm{font-size:13px;font-weight:640;color:var(--tx1);display:flex;align-items:center;gap:8px;overflow:hidden}
 .su-nmt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -138,14 +126,15 @@ html[data-motion="off"] .su-row{animation:none}
 .su-why span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .su-tag{flex:0 0 auto;font-style:normal;font-size:10px;font-weight:700;line-height:1;
   padding:3px 7px;border-radius:7px;letter-spacing:.4px;white-space:nowrap}
-.su-tag.sys{background:rgba(96,165,250,.12);color:var(--info)}
-.su-tag.kind{background:rgba(96,165,250,.12);color:var(--info)}
+/* 列表行的「系统」标签与弹窗里的类型标签（启动项 / 服务项 / 计划任务）同一个色系：
+   都是"这条是什么"，不是"这条怎么了"，所以不用警告色。 */
+.su-tag.sys,.su-tag.kind{background:rgba(96,165,250,.12);color:var(--info)}
 .su-adv{width:92px;flex:0 0 auto;display:flex;align-items:center}
 .su-adv .b{font-size:11px;font-weight:700;padding:4px 9px;border-radius:8px;line-height:1;
   white-space:nowrap;cursor:help}
 .su-adv .b.no{background:var(--glass-hi);color:var(--tx3)}
 .su-adv .b.yes{background:rgba(251,113,133,.16);color:var(--danger)}
-/* 建议删除（火绒 recommend_delete / invalid）：比「建议禁止」更重一档，走琥珀色不与红色混淆 */
+/* 建议删除（火绒 recommend_delete / invalid）：比「建议禁用」更重一档，走琥珀色不与红色混淆 */
 .su-adv .b.del{background:rgba(251,191,36,.18);color:var(--warn,#f59e0b)}
 .su-state{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx3);
   width:78px;flex:0 0 auto}
@@ -168,8 +157,6 @@ html[data-motion="off"] .su-row{animation:none}
 .su-more:hover{color:var(--info);background:var(--glass-hi);border-color:var(--stroke-2)}
 
 /* ── 4 载入中 / 空态 ─────────────────────────────────────────────────── */
-.su-loading{display:flex;align-items:center;gap:10px;padding:30px;justify-content:center;
-  color:var(--tx2);font-size:13px}
 .su-spin{width:16px;height:16px;border-radius:50%;border:2.5px solid var(--stroke-2);
   border-top-color:var(--info);animation:suSpin .8s linear infinite;flex:0 0 auto}
 @keyframes suSpin{to{transform:rotate(360deg)}}
@@ -225,6 +212,14 @@ html[data-motion="off"] .su-spin{animation:none}
 .su-optrow:hover{background:var(--glass-hi)}
 .su-optrow input{width:16px;height:16px;accent-color:var(--info);flex:0 0 auto}
 .su-optrow .su-ico{width:34px;height:34px}
+/* 弹窗里的说明允许两行：复用列表那个单行截断样式（.su-sub 是 nowrap+ellipsis），
+   会把最该让用户看见的那句「禁用后软件主功能不受影响」切掉。弹窗宽 470px、
+   最多也就几项，空间完全够，没必要截。 */
+.su-optrow .su-sub{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;
+  -webkit-line-clamp:2;overflow:hidden}
+/* 实测项：整行浅绿底，跟"我们猜的"那批拉开区别 */
+.su-optrow.hot{background:rgba(52,211,153,.07)}
+.su-tag.hot{background:rgba(251,191,36,.18);color:var(--warn)}
 .su-optbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .su-optbar span{font-size:12.5px;color:var(--tx3)}
 .su-prog{height:10px;border-radius:6px;background:var(--glass-hi);overflow:hidden;margin:12px 0 8px}
@@ -244,7 +239,147 @@ html[data-motion="off"] .su-spin{animation:none}
     padding-top:7px;border-top:1px solid var(--stroke)}
 }
 @media (max-width:1080px){
-  .su-guide{flex-wrap:wrap}
-  .su-guide-grid{grid-template-columns:1fr}
-  .su-row .su-adv,.su-head .su-h-adv{display:none}
+  .su-row .su-adv,.su-thead .su-h-adv{display:none}
+}
+
+/* ── 8 开机状态条（2026-10-27 定稿：一条 + 一刀）────────────────────────────
+   一块卡两行：
+     这次开机 86.2 秒 · 4 项自启        关掉 2 项 → 77.3 秒   [一键优化][清理无效项]
+     [ Windows 自身 76.8 秒 ][ 启动项 9.4 秒 │░░ 省 2.4 秒 ░░ ]
+   灰段 = Windows 自己的启动流程（所有电脑都有，改不了），橙段 = 启动项（只有你能改），
+   白线 = 刀口，右边压暗段直接写「省 N 秒」—— 不用读句子，看条被切掉一截就知道。
+   ⚠️ .page 是 flex 列容器，顶层块必须 flex:0 0 auto，否则被压成一条。
+*/
+/* ⚠️ align-self:stretch + min-width:0 缺一不可。
+   .page 是 flex 列容器，列方向 item 的宽度由 align-items 决定，不是由内容决定；
+   这里一旦落到 flex-start，宽度就变成 max-content —— 时间轴内容一长（竖排秒数 +
+   后台标签），整条 strip 会被撑到 583px，右端「还在忙 共 xx 秒」直接跑出卡片外面。
+   之前几版内容短，溢出不明显，所以一直没发现。 */
+.su-strip{position:relative;flex:0 0 auto;align-self:stretch;min-width:0;
+  display:flex;align-items:center;gap:14px;
+  padding:7px 14px;margin-bottom:11px;border-radius:var(--r2);
+  border:1px solid var(--stroke);box-shadow:var(--sh1);
+  background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  animation:suStripIn .4s var(--e1) both}
+.su-st-main{flex:1 1 auto;min-width:0}
+/* 右侧动作区。菜单元件必须 flex:0 0 auto：容器是 flex 行，按钮默认 shrink:1，
+   窄窗口下「清理无效项 6」会被压掉半个字。 */
+.su-st-r{display:flex;align-items:center;gap:7px;flex:0 0 auto}
+
+/* ⚠️ 有开机条时改成底对齐（2026-10-27 第十三版）。
+   左块是两行（数字行 22px + 条 27px），右块只有一排 27px 的按钮。居中摆放会让
+   条的中心线比按钮低 14px —— 用户看到的就是"左边一坨在下面、右边两个浮在上面"。
+   底对齐之后，条和按钮共用同一条底边、同为 27px 高，第一行的数字和结算语也自然
+   落在按钮上方那一行，整块变成严格的两行网格。
+   只在有条时生效：「读不到开机数据」那一支是单行标题 + 按钮，底对齐会把标题顶上去。 */
+.su-strip.has-bp{align-items:flex-end}
+
+/* 读不到开机数据时的降级态：一行「图标 + 标题 + 原因」。
+   ⚠️ 2026-10-27 补：这五个类名一直在 JS 里用（suRenderPerf 的 else 分支），
+      样式却在改版时整段丢了 —— 图标、标题、原因会挤成一行连续文字，
+      没有间距、没有主次，看着像一句话被截断了。 */
+.su-st-hd{display:flex;align-items:center;gap:8px;min-height:27px;
+  white-space:nowrap;overflow:hidden}
+.su-st-ico{flex:0 0 auto;display:grid;place-items:center;width:20px;height:20px;
+  border-radius:6px;background:rgba(251,191,36,.16);color:#b45309}
+html[data-theme="dark"] .su-st-ico{background:rgba(251,191,36,.14);color:#fbbf24}
+.su-st-t{flex:0 0 auto;font-size:13px;font-weight:650;color:var(--tx1)}
+.su-st-meta{min-width:0;font-size:11px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis}
+/* 没有需要处理的项：绿色小字，和右边按钮同一行基线 */
+.su-st-ok{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;
+  font-weight:600;color:var(--ok);white-space:nowrap}
+
+/* ── 开机耗时条本体 ───────────────────────────────────────────────────────
+   ⚠️ 两段宽度用内联 width%，不用 flex-grow / scaleX。拨开关时要靠 transition
+      把收窄演出来，而 flex 简写里带 var() 会被丢弃、scaleX 会让圆角变形。
+      width% + min-width:0 是这一轮试下来唯一稳的（三种都踩过）。
+   ⚠️ 首次绘制用 clip-path 让条"长"出来，只裁外框不动内部 width，
+      所以和 width 的 transition 不打架。
+*/
+.su-bp{position:relative}
+.su-bp-top{display:flex;align-items:baseline;gap:5px;white-space:nowrap;height:22px}
+.su-bp-l{font-size:10.5px;color:var(--tx3);letter-spacing:.2px;flex:0 0 auto}
+.su-bp-n{font-size:22px;font-weight:700;line-height:1;letter-spacing:-.5px;
+  font-variant-numeric:tabular-nums;color:var(--tx1)}
+.su-bp-top i{font-style:normal;font-size:10.5px;color:var(--tx3);flex:0 0 auto}
+.su-bp-s{margin-left:auto;font-size:10.5px;color:var(--tx3);letter-spacing:.1px;
+  overflow:hidden;text-overflow:ellipsis;min-width:0}
+.su-bp-s b{color:var(--tx1);font-weight:600;font-variant-numeric:tabular-nums}
+.su-bp-s .ok{color:var(--ok)}
+/* 打开了有前科的项：结算语里那个名字变橙。颜色是这里唯一的"警告"手段 ——
+   不加图标、不加新行，因为这块总共只有 68px。
+   （大数字不再是橙色：它现在永远是"这次开机"的实测值，不会再变成预测值。） */
+.su-bp-s b.warn{color:#b45309}
+html[data-theme="dark"] .su-bp-s b.warn{color:#fbbf24}
+
+/* 条所在的那一行（条 + 条外的留白）。 */
+.su-bp-brow{display:flex;align-items:center;gap:7px;margin-top:6px}
+/* 条高 27px = .btn.sm 的高度。这不是巧合：条和右边的按钮要底对齐、等高，
+   否则两行的高度对不上，卡片看着就是歪的（用户 2026-10-27 提的）。 */
+.su-bp-bar{position:relative;flex:1 1 auto;min-width:0;display:flex;gap:2px;height:27px;
+  border-radius:6px;overflow:hidden;animation:suBpGrow .86s var(--e1) .12s both}
+.su-bp-sys{display:flex;align-items:center;justify-content:center;min-width:0;
+  overflow:hidden;white-space:nowrap;font-size:10.5px;color:#6b6a64;
+  background:#e8e6df;transition:width .6s var(--e1)}
+html[data-theme="dark"] .su-bp-sys{background:rgba(255,255,255,.09);color:var(--tx3)}
+.su-bp-app{display:flex;align-items:center;justify-content:center;min-width:6px;
+  overflow:hidden;white-space:nowrap;font-size:10.5px;font-weight:600;color:#412402;
+  background:linear-gradient(90deg,#f59e0b,#fbbf24);
+  box-shadow:inset 0 0 0 1px rgba(180,83,9,.14);transition:width .6s var(--e1)}
+.su-bp-app span{overflow:hidden;white-space:nowrap}
+
+/* 「· 31 项自启」：普通用户最缺的一个数 —— 他从来没数过自己开了多少个。
+   只数 Run 项（页签第一栏），不掺服务和计划任务，否则会变成三十几个，
+   和 Windows 自己报的启动项数量对不上。 */
+.su-bp-cnt{font-size:10.5px;color:var(--tx3);flex:0 0 auto;
+  letter-spacing:.2px;font-variant-numeric:tabular-nums}
+
+/* ── 切线（2026-10-27 第十二版）────────────────────────────────────────────
+   条被"剖开"的那一刀：左边是这次开机的实测，右边是关掉之后的预计。
+   白线 2px 贯穿条高，压暗段里直接写「省 52 秒」—— 用户不用读句子，
+   看条被切掉一截就知道能快多少。这是整块唯一想让人记住的画面。
+   ⚠️ 三个元素都用 left 百分比定位，和两段 width 共用同一个分母，
+      拨开关时 transition 会让刀口自己滑过去，不需要任何 JS 补间。 */
+.su-bp-cutbg{position:absolute;top:0;bottom:0;right:0;
+  background:rgba(14,16,20,.74);border-radius:0 6px 6px 0;
+  transition:left .6s var(--e1)}
+html[data-theme="light"] .su-bp-cutbg{background:rgba(255,255,255,.78)}
+.su-bp-ct{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;
+  background:#fff;transition:left .6s var(--e1)}
+html[data-theme="light"] .su-bp-ct{background:#1c1e24}
+.su-bp-ctxt{position:absolute;top:0;bottom:0;right:0;display:flex;
+  align-items:center;justify-content:center;font-size:10.5px;font-weight:600;
+  color:var(--ok);letter-spacing:.2px;font-variant-numeric:tabular-nums;
+  transition:left .6s var(--e1)}
+
+@keyframes suBpGrow{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+
+/* ⚠️ 属性选择器只算 1 份 class。要压过 .su-bp-bar 的 animation 和两段的
+   transition，必须把选择器写全，否则全局"关闭动效"开关会失效
+   （列表行和之前的时间轴版各踩过一次）。 */
+html[data-motion="off"] .su-bp-bar{animation:none}
+html[data-motion="off"] .su-bp-sys,
+html[data-motion="off"] .su-bp-app,
+html[data-motion="off"] .su-bp-cutbg,
+html[data-motion="off"] .su-bp-ct,
+html[data-motion="off"] .su-bp-ctxt{transition:none}
+html[data-motion="off"] .su-strip{animation:none}
+
+/* 列表名后面的「拖慢 X 秒」。橙色，和顶部那条橙段是同一个语义 ——
+   用户在卡片上看到"启动项 9.4 秒"，往下扫就靠这个色块找到是谁。 */
+.su-tag.slow{background:rgba(245,158,11,.16);color:#9a5b00;
+  border:1px solid rgba(180,83,9,.22)}
+html[data-theme="dark"] .su-tag.slow{background:rgba(245,158,11,.18);color:#fbbf24}
+
+/* 窄窗口：先收结算语（它最长），数字和条永远留着 —— 那是这块的全部意义。
+   960px 以下连灰段里的字也收掉，只留色块，避免被裁成半行字。 */
+@media (max-width:1120px){
+  .su-bp-s{font-size:10px}
+  .su-bp-n{font-size:20px}
+  .su-bp-cnt{display:none}
+}
+@media (max-width:980px){
+  .su-bp-sys{font-size:9.5px}
+  .su-bp-ctxt{font-size:9.5px}
 }
