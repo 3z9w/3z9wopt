@@ -5,7 +5,9 @@
 [![Language](https://img.shields.io/badge/language-Go%20%2B%20Wails-00ADD8.svg)](#)
 [![GitHub](https://img.shields.io/badge/GitHub-3z9w%2F3z9wopt-181717.svg)](https://github.com/3z9w/3z9wopt)
 [![Gitee](https://img.shields.io/badge/Gitee-opt3z9w%2F3z9wopt-C71D23.svg)](https://gitee.com/opt3z9w/3z9wopt)
+[![English](https://img.shields.io/badge/README-English-blue.svg)](README.en.md)
 
+![界面演示：总览 → 垃圾清理 → 系统优化 → 启动项管理 → 磁盘空间 → 本机配置](docs/img/demo.gif)
 
 > **Windows 系统优化工具箱** —— 清理垃圾、按需优化、管理启动项与驱动、看磁盘占用、读蓝屏原因。
 > 前端是 Go + Wails v2 + WebView2 的桌面程序，**所有数据真读本机，读不到就写「读不到」，不编造**。

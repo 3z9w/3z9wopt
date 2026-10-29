@@ -15,6 +15,8 @@
 - Source: <https://github.com/3z9w/3z9wopt> (Gitee mirror: <https://gitee.com/opt3z9w/3z9wopt>)
 - 中文说明：[README.md](README.md)
 
+![Overview → Junk cleanup → System tuning → Startup items → Disk usage → Hardware info](docs/img/demo.gif)
+
 ## Features
 
 | Module | What it does |
