@@ -11,9 +11,12 @@
      · 扫描        SpaceScanAsync（MFT 直读），进度/完成走 space:progress / space:done
      · 目录分析    SpaceChildren / SpaceCrumbs —— 列表 + 矩形图两种视图
      · 大文件      SpaceTopFiles(minSize, limit)
-     · 重复文件    SpaceDupScanAsync —— 同大小分组 → 抽样哈希 → 全量 MD5 确认
-     · 删除        SpaceDelete —— 直接**永久删除**（勾选 + 弹窗两道确认），不可恢复
-     · 定位        SpaceOpen —— 资源管理器选中该文件
+   · 重复文件    SpaceDupScanAsync —— 同大小分组 → 抽样哈希 → 全量 MD5 确认
+   · 可删除性    SpaceAssess / DupGroup.risks —— 系统 / 程序组件 / 游戏 / 用户数据
+                 分级，每组按风险挑正本（后端 space_safety.go），高风险项默认锁定
+   · 删除        SpaceDelete / SpaceDeleteUnlocked —— 永久删除，不可恢复；
+                 后端删除前再复核一次，系统 / 受保护文件一律拒绝
+   · 定位        SpaceOpen —— 资源管理器选中该文件
 
    与老版本唯一的两处差别（用户 2026-10-11 定的）：
      ① 目录分析**默认显示矩形图**（老版本默认列表；两个视图都还在，随时切）
@@ -31,6 +34,7 @@ window.DK = window.DK || {
   view: 'map',                  /* 目录分析的默认视图：矩形图（老版本默认列表，用户要求改） */
   topRows: [], topMin: 1073741824,
   dupGroups: [], dupFreed: 0, dupScanning: false, dupPct: 0, dupStage: '', dupMin: 104857600,
+  dupUnlock: {},                 /* 每组「解锁高风险项」的状态：默认全锁，重扫即清空 */
   stats: {}, dirLoaded: false, evtBound: false
 };
 var DK = window.DK;
@@ -139,7 +143,7 @@ function dkPaint(){
       ? 'MFT 直读索引 · <b>' + dkEsc(DK.stats.drive || DK.drive) + '</b> 盘 · '
         + (DK.stats.files || 0).toLocaleString() + ' 个文件，三个视图共用一次扫描'
       : 'MFT 直读引擎：百万文件全盘索引只需数秒（需管理员权限，仅支持 NTFS 盘）。'
-        + '删文件一律<b>永久删除</b>，不可恢复。';
+        + '删文件一律<b>永久删除</b>，不可恢复；系统 / 程序 / 游戏文件会先按风险自动锁定。';
   }
   var scan = dkEl('spScan');
   if(scan) scan.disabled = !!DK.scanning;
@@ -447,28 +451,59 @@ function dkRenderDup(){
       + '<div class="empty-ico" style="color:var(--info)">' + ico('copy', 30) + '</div>'
       + '<div class="empty-t">还没有分析结果</div>'
       + '<div class="empty-d">重复文件 = 同一磁盘上内容完全相同的文件（哈希确认）。'
-      + '删除多余副本后，留下一份原文件。</div></div></div>';
+      + '<b>内容相同，不代表有一份是多余的</b>：程序组件、游戏资源、系统文件会被自动识别并锁定，'
+      + '每组只保留最不该删的那一份。</div></div></div>';
     return;
   }
   if(DK.dupFreed) dkRenderStats();
   list.innerHTML = '<div class="sp-dup-sum">发现 <b>' + DK.dupGroups.length + '</b> 组重复，'
     + '最多可释放 <b>' + fmtSize(DK.dupFreed) + '</b>。'
-    + '<span class="sp-hint2">每组默认保留第一份（路径最短的），勾选要删除的多余副本。</span></div>'
+    + '<span class="sp-hint2">已按风险分级：系统 / 受保护文件<b>禁止删除</b>，程序与游戏文件<b>默认锁定</b>，'
+    + '每组自动保留正本（不再是路径字母序第一份）。</span></div>'
     + DK.dupGroups.map(function(g, gi){
+        var risks = g.risks || [];
+        var keep = (typeof g.keep === 'number' && g.keep >= 0 && g.keep < g.paths.length) ? g.keep : 0;
+        var unlocked = !!DK.dupUnlock[gi];
+        var nBlock = 0, nHigh = 0;
+        risks.forEach(function(r){
+          if(r.level === 'block') nBlock++;
+          else if(r.level === 'high') nHigh++;
+        });
+        var note = (nBlock || nHigh)
+          ? '<span class="sp-dupg-note">' + (nBlock ? nBlock + ' 项禁删' : '')
+            + (nBlock && nHigh ? ' · ' : '')
+            + (nHigh ? nHigh + ' 项高风险' + (unlocked ? '（已解锁）' : '（已锁定）') : '') + '</span>'
+          : '';
+        var unlockBtn = nHigh
+          ? '<button class="btn sm" data-dup-unlock="' + gi + '"'
+            + ' title="' + (unlocked ? '重新锁定高风险项' : '解锁后才可勾选程序 / 游戏文件') + '">'
+            +   ico('warn', 13) + (unlocked ? '重新锁定' : '解锁高风险项') + '</button>'
+          : '';
         return '<div class="card sp-dupgroup" data-gi="' + gi + '">'
           + '<div class="sp-dupg-head"><span class="sz">' + fmtSize(g.size) + ' × ' + g.paths.length + ' 份</span>'
           + '<span class="freed">删多余可释放 ' + fmtSize(g.size * (g.paths.length - 1)) + '</span>'
-          + '<span style="flex:1"></span>'
+          + note + '<span style="flex:1"></span>' + unlockBtn
           + '<button class="btn sm danger sp-dup-del" data-gi="' + gi + '">'
           +   ico('trash', 14) + '删除勾选副本</button></div>'
           + g.paths.map(function(p, pi){
-              var nm = p.replace(/^.*[\\/]/, '');
-              var h = dkHint(nm, p, false);
-              return '<label class="sp-duppath' + (pi === 0 ? ' keep' : '') + '">'
+              var r = risks[pi] || { level: 'caution', tags: ['普通文件'], reason: '未能评估风险，请自行确认' };
+              var isKeep = (pi === keep);
+              var lv = r.level;
+              var locked = isKeep || lv === 'block' || (lv === 'high' && !unlocked);
+              var cls = lv === 'block' ? 't-red' : lv === 'high' ? 't-amb' : lv === 'safe' ? 't-grn' : 't-yel';
+              var tagTxt = isKeep ? '保留·正本'
+                         : lv === 'block' ? '禁止删除'
+                         : (lv === 'high' && !unlocked) ? '默认锁定' : '副本';
+              var rowCls = 'sp-duppath' + (isKeep ? ' keep' : '')
+                         + (lv === 'block' ? ' blocked' : '')
+                         + (locked && !isKeep ? ' locked' : '');
+              var why = (r.tags && r.tags.length ? '【' + r.tags.join(' / ') + '】' : '') + (r.reason || '');
+              return '<label class="' + rowCls + '" title="' + dkEsc(why) + '">'
                 + '<input type="checkbox" data-dup-path="' + dkEsc(p) + '"'
-                +   (pi === 0 ? ' disabled checked' : '') + '>'
-                + '<span class="tag">' + (pi === 0 ? '保留' : '副本') + '</span>'
-                + '<span class="p" title="' + dkEsc(h.txt) + '\n完整路径：' + dkEsc(p)
+                +   (locked ? ' disabled' : '') + (isKeep ? ' checked' : '') + '>'
+                + '<span class="tag">' + tagTxt + '</span>'
+                + '<i class="sp-tag ' + cls + '">' + dkEsc((r.tags && r.tags[0]) || '普通文件') + '</i>'
+                + '<span class="p" title="' + dkEsc(why) + '\n完整路径：' + dkEsc(p)
                 +   '\n点击在资源管理器中定位">' + dkEsc(p) + '</span>'
                 + '<button class="sp-act" data-dup-open="' + dkEsc(p) + '" title="在资源管理器中显示所在位置">'
                 +   ico('search', 14) + '</button></label>';
@@ -482,7 +517,7 @@ function dkStartScan(drive){
   if(DK.scanning) return;
   DK.drive = drive; DK.scanning = true; DK.ready = false; DK.pct = 0; DK.err = '';
   DK.frn = 5; DK.rows = []; DK.crumbs = []; DK.dirLoaded = false;
-  DK.topRows = []; DK.dupGroups = []; DK.dupFreed = 0; DK.stats = {};
+  DK.topRows = []; DK.dupGroups = []; DK.dupFreed = 0; DK.dupUnlock = {}; DK.stats = {};
   dkPaint();
   callGo('SpaceScanAsync', drive).catch(function(e){
     DK.scanning = false; DK.err = String(e && e.message ? e.message : e);
@@ -509,28 +544,64 @@ function dkOpenPath(frnOrPath){
   }).catch(function(){ toast('打开失败', 'warn'); });
 }
 
-/* 删除确认：老版本是弹窗，本版沿用（删文件是要用户拍板的事，不能默默删） */
+/* 删除确认：删文件要用户拍板，而且**删之前让后端再复核一次**。
+   扫描完到现在可能过了很久：文件可能刚被程序占用、刚被服务引用，
+   前端的禁用状态也挡不住直接调用绑定 —— 真正的闸门在 SpaceDelete。 */
 function dkConfirmDelete(paths, title){
+  callGo('SpaceAssess', paths).then(function(risks){
+    var rs = risks || [];
+    var blocked = rs.filter(function(r){ return r.level === 'block'; });
+    if(blocked.length){
+      toast('已阻止删除：' + blocked.length + ' 项属于系统 / 受保护文件（'
+        + ((blocked[0].tags && blocked[0].tags[0]) || '禁止删除') + '），不能删除', 'danger');
+      return;
+    }
+    var high = rs.filter(function(r){ return r.level === 'high'; });
+    dkShowDeleteModal(paths, title, rs, high.length > 0);
+  }).catch(function(){
+    /* 评估拿不到就按最保守的来：弹窗照开，但只走默认档（后端仍会拦 high/block） */
+    dkShowDeleteModal(paths, title, [], false);
+  });
+}
+
+function dkShowDeleteModal(paths, title, risks, needAck){
   var box = dkEl('modalBox');
-  if(!box){ return; }
-  box.style.width = 'min(520px,94vw)';
+  if(!box) return;
+  box.style.width = 'min(560px,94vw)';
+  var rows = (risks || []).slice(0, 6).map(function(r){
+    var cls = r.level === 'high' ? 't-amb' : r.level === 'safe' ? 't-grn' : 't-yel';
+    return '<div class="sp-risk-row"><i class="sp-tag ' + cls + '">'
+      + dkEsc((r.tags && r.tags[0]) || '普通文件') + '</i>'
+      + '<span title="' + dkEsc(r.path) + '">' + dkEsc(r.path) + '</span></div>';
+  }).join('');
+  var more = (risks || []).length > 6
+    ? '<div class="sp-risk-more">…其余 ' + ((risks || []).length - 6) + ' 项</div>' : '';
   box.innerHTML = '<div class="modal-t"><span style="color:var(--danger)">' + ico('warn', 20) + '</span>确认删除</div>'
     + '<div class="modal-d">' + dkEsc(title) + '</div>'
+    + (rows ? '<div class="sp-risk-list">' + rows + more + '</div>' : '')
+    + (needAck
+        ? '<div class="sp-del-note" style="color:var(--warn);background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.35)">'
+          + '其中含<b>程序 / 游戏文件</b>：即使现在没在运行，删除后软件或游戏下次启动可能报错、缺功能甚至需要重装。</div>'
+          + '<label class="sp-risk-ack"><input type="checkbox" id="spRiskAck"> 我已了解风险，确认仍要删除这些文件</label>'
+        : '')
     + '<div class="sp-del-note" style="color:var(--danger);background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.35)">'
     +   '删除后<b style="color:var(--danger)">不可恢复</b>，文件不会进入回收站；确认后立即永久删除。</div>'
     + '<div class="modal-f"><button class="btn" id="mCancel">取消</button>'
-    + '<button class="btn primary" id="spDelGo">' + ico('trash', 16) + '删除</button></div>';
+    + '<button class="btn primary" id="spDelGo"' + (needAck ? ' disabled' : '') + '>'
+    +   ico('trash', 16) + '删除</button></div>';
   dkEl('modal').classList.add('open');
   dkEl('mCancel').onclick = closeModal;
-  var go = dkEl('spDelGo');
+  var ack = dkEl('spRiskAck'), go = dkEl('spDelGo');
+  if(ack) ack.onchange = function(){ go.disabled = !ack.checked; };
   go.onclick = function(){
     go.disabled = true; go.textContent = '删除中…';
-    callGo('SpaceDelete', paths).then(function(res){
+    /* 只有「列表里解锁 + 弹窗里再次确认」两道都过了，才走 Unlocked 档；
+       block 档后端无论如何都不放行。 */
+    var fn = needAck ? 'SpaceDeleteUnlocked' : 'SpaceDelete';
+    callGo(fn, paths).then(function(res){
       var fail = (res || []).filter(function(r){ return !r.ok; });
       closeModal();
       if(fail.length){
-        /* 把后端的具体原因带出来：以前只说「1 项失败」，用户和作者都不知道
-           是被占用、没权限还是路径无效，反馈回来只能靠猜。 */
         var why = fail[0].err ? '（' + dkEsc(fail[0].err) + '）' : '';
         toast((paths.length - fail.length) + ' 项已删除，' + fail.length + ' 项失败' + why, 'warn');
       }
@@ -618,19 +689,35 @@ window.bindDisk = function(){
       dkOpenPath(dp.querySelector('[data-dup-open]').getAttribute('data-dup-open'));
       return;
     }
+    /* 高风险项解锁：只作用于本组，重绘会清掉已勾选状态（宁可让用户重新勾一遍） */
+    var ul = t.closest('[data-dup-unlock]');
+    if(ul){
+      var ugi = +ul.getAttribute('data-dup-unlock');
+      DK.dupUnlock[ugi] = !DK.dupUnlock[ugi];
+      dkRenderDup();
+      toast(DK.dupUnlock[ugi]
+        ? '已解锁本组高风险项：请逐项看清原因，删除时还需再次确认'
+        : '已重新锁定本组高风险项', DK.dupUnlock[ugi] ? 'warn' : 'ok');
+      return;
+    }
     var ddel = t.closest('.sp-dup-del');
     if(ddel){
       var gi = +ddel.getAttribute('data-gi');
       var g = DK.dupGroups[gi];
       if(!g) return;
+      var keep = (typeof g.keep === 'number' && g.keep >= 0 && g.keep < g.paths.length) ? g.keep : 0;
       var picked = [];
       dkEach('.sp-dupgroup[data-gi="' + gi + '"] input[data-dup-path]', function(c){
-        if(c.checked) picked.push(c.getAttribute('data-dup-path'));
+        /* disabled 的一律不算：正本、禁删项、未解锁的高风险项都带 disabled */
+        if(c.checked && !c.disabled) picked.push(c.getAttribute('data-dup-path'));
       });
-      picked = picked.filter(function(p){ return g.paths.indexOf(p) >= 0 && p !== g.paths[0]; });
-      if(!picked.length){ toast('请先勾选要删除的副本（第一份是保留项）', 'warn'); return; }
+      picked = picked.filter(function(p){ return g.paths.indexOf(p) >= 0 && p !== g.paths[keep]; });
+      if(!picked.length){
+        toast('请先勾选要删除的副本（标「保留·正本」的不可删；高风险项需先解锁）', 'warn');
+        return;
+      }
       dkConfirmDelete(picked, picked.length + ' 个重复副本（共 ' + fmtSize(g.size * picked.length)
-        + '），保留：' + g.paths[0]);
+        + '），保留：' + g.paths[keep]);
       return;
     }
 
@@ -688,7 +775,7 @@ window.bindDisk = function(){
     if(t.closest('#spDupGo')){
       var sel = dkEl('spDupMin');
       if(sel) DK.dupMin = +sel.value;
-      DK.dupScanning = true; DK.dupGroups = []; DK.dupFreed = 0;
+      DK.dupScanning = true; DK.dupGroups = []; DK.dupFreed = 0; DK.dupUnlock = {};
       dkRenderDup();
       callGo('SpaceDupScanAsync', DK.dupMin).catch(function(ex){
         DK.dupScanning = false;

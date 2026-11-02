@@ -10,6 +10,13 @@ package main
 // 不再需要回收站兜底；技术上 FOF_ALLOWUNDO 依赖回收站配额/组策略/卷类型，
 // 100MB+ 的重复文件在部分机器上会直接返回非 0，表现成「0 项入回收站，1 项失败」。
 //
+// 2026-11-02 三次修复：新增「可删除性判断链」（space_safety.go）。重复文件扫描
+// 过去只按大小 + MD5 分组，把钉钉 current / current_new 双版本目录里的
+// libcef.dll 判成「重复」，还把路径字母序第一份当正本 —— 结果删掉的是正在用的
+// 新版。「内容相同」不等于「有一份多余」：程序组件、游戏资源、系统文件、
+// 云同步目录、密钥凭据、备份，都不能按留一份删其余处理。现在每组带逐路径
+// 风险等级与正本索引，前端默认锁死高风险项，后端删除前再复核一次。
+//
 // 2026-10-11：这一页从老版本（v2）**按功能 100% 移植** —— 重复文件判定
 // （同大小分组 → 抽样哈希 → 全量 MD5）、删除、定位的行为与参数一律照搬，
 // 只换了盘列表来源：沿用本版 GetDiskList（带卷标名与固态标记，首页也在用），
@@ -252,11 +259,16 @@ func (a *App) SpacePath(frn uint64) (string, error) {
 // ---------- 重复文件 ----------
 
 // DupGroup 一组内容完全相同的文件（全量哈希确认过才会进这里）
+//
+// 2026-11-02：新增 Risks / Keep。「内容相同」只说明可以只留一份，
+// 没说明**留哪一份、哪几份根本不该删**。判断链见 space_safety.go。
 type DupGroup struct {
-	Size   int64    `json:"size"`
-	Hash   string   `json:"hash"`
-	Paths  []string `json:"paths"`
-	IsFull bool     `json:"isFull"` // true=全量哈希确认 false=仅快速哈希疑似
+	Size   int64      `json:"size"`
+	Hash   string     `json:"hash"`
+	Paths  []string   `json:"paths"`
+	IsFull bool       `json:"isFull"` // true=全量哈希确认 false=仅快速哈希疑似
+	Risks  []FileRisk `json:"risks"`  // 与 Paths 一一对应的可删除性结论
+	Keep   int        `json:"keep"`   // 建议保留的正本下标（按风险选，不再按路径字母序）
 }
 
 func (g *DupGroup) files() int { return len(g.Paths) }
@@ -408,6 +420,9 @@ func (idx *mftIndex) findDuplicates(minSize int64, progress func(int, string)) (
 	if len(out) > 200 {
 		out = out[:200]
 	}
+	// 分组只是「找」，这里补上「判」：逐路径风险分级 + 按风险挑出该保留的正本。
+	// 放在截断之后，避免对用不到的组做无谓的注册表/句柄探测。
+	assessDupGroups(out)
 	return out, freed, nil
 }
 
@@ -477,17 +492,43 @@ type SpaceDelResult struct {
 	Err  string `json:"err"`
 }
 
-// SpaceDelete 批量永久删除（每个路径独立处理，互不影响）
+// SpaceDelete 批量永久删除（每个路径独立处理，互不影响）。
 //
 // 2026-11-02 二次修复（用户反馈「不卡了，但 0 项入回收站，1 项失败，文件还在」）：
 // 产品决定：磁盘空间页删除已经过「勾选副本 + 弹窗确认」两道确认，直接永久删除，
 // 不再进回收站。技术上正好绕开一整类失败：FOF_ALLOWUNDO 依赖回收站配额、
 // 组策略、卷是否支持回收站；重复文件页筛的是 100MB+ 大文件，配额不足或策略
-// 禁用时 shell 会直接返回非 0（又带了 FOF_NOCONFIRMATION，不会弹「是否永久删除」
-// 让用户选），于是就成了「0 项成功、1 项失败」。
+// 禁用时 shell 会直接返回非 0，于是就成了「0 项成功、1 项失败」。
+//
+// 2026-11-02 三次修复（用户反馈「内容重复 ≠ 有一份是多余的」）：
+// 删除前**后端自己复核**每个路径的可删除性，见 space_safety.go。前端的勾选框、
+// 禁用状态都只是交互，Wails 绑定可以被直接调用，所以真正的闸门必须放在这里。
+//   - SpaceDelete          默认档：block / high 一律拒绝
+//   - SpaceDeleteUnlocked  前端显式解锁后才用：放行 high，block 仍然永不删除
 func (a *App) SpaceDelete(paths []string) []SpaceDelResult {
+	return a.spaceDelete(paths, false)
+}
+
+// SpaceDeleteUnlocked 只在用户在列表里主动解锁「程序/游戏文件」后才允许调用。
+func (a *App) SpaceDeleteUnlocked(paths []string) []SpaceDelResult {
+	return a.spaceDelete(paths, true)
+}
+
+func (a *App) spaceDelete(paths []string, allowHigh bool) []SpaceDelResult {
 	out := []SpaceDelResult{}
+	ctx := currentRiskCtx()
 	for _, p := range paths {
+		r := assessPath(p, ctx)
+		switch {
+		case r.Level == riskBlock:
+			out = append(out, SpaceDelResult{Path: p, Ok: false,
+				Err: "已阻止删除【" + r.Tags[0] + "】：" + r.Reason})
+			continue
+		case r.Level == riskHigh && !allowHigh:
+			out = append(out, SpaceDelResult{Path: p, Ok: false,
+				Err: "已阻止删除【" + r.Tags[0] + "】：" + r.Reason + "；如确认要删请先在列表中解锁"})
+			continue
+		}
 		err := spaceDeleteFile(p)
 		out = append(out, SpaceDelResult{Path: p, Ok: err == nil, Err: errStr(err)})
 	}
