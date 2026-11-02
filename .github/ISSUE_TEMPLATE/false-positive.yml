@@ -1,0 +1,91 @@
+name: 杀毒软件误报 / Antivirus false positive
+description: 被 Defender、360、腾讯管家、火绒、卡巴等拦截时用这个模板，信息填全我才能去厂商那边申诉
+title: "[误报] <杀软名> 报 <检测名>"
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        本软件**未做代码签名**，被部分引擎误报属于已知情况，作者会按这个 issue 汇总后统一向厂商申诉。
+        填得越全，处理越快。**请不要在这里粘贴你的 QQ / 手机号等个人信息。**
+
+  - type: input
+    id: engine
+    attributes:
+      label: 杀毒软件名称与版本
+      description: 例如 Windows Defender（Win11 24H2）、360 安全卫士 15.0、火绒 6.0
+      placeholder: Windows Defender（Windows 11 24H2）
+    validations:
+      required: true
+
+  - type: input
+    id: detection
+    attributes:
+      label: 检测名（报毒名称）
+      description: 杀软弹窗里显示的那个名字，请照抄
+      placeholder: Trojan:Win32/Bearfoos.B!ml
+    validations:
+      required: true
+
+  - type: input
+    id: signature
+    attributes:
+      label: 病毒库 / 引擎版本
+      description: Defender 可在「Windows 安全中心 → 病毒和威胁防护 → 病毒和威胁防护更新」里看到；其它杀软在「关于」里
+      placeholder: 1.421.xxx.0
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: 你使用的 3z9wOpt 版本
+      description: 界面底部或「设置 → 关于」里的版本号 + 构建号
+      placeholder: v1.1.0 (20261027.2)
+    validations:
+      required: true
+
+  - type: input
+    id: source
+    attributes:
+      label: 从哪里下载的
+      description: GitHub Releases / 官网 opt.3z9w.com / Gitee / 自行编译
+      placeholder: GitHub Releases
+    validations:
+      required: true
+
+  - type: textarea
+    id: sha256
+    attributes:
+      label: 文件 SHA256（建议填）
+      description: 在 exe 所在文件夹的地址栏输入 cmd，执行 `certutil -hashfile 3z9wOpt_v1.1.0.exe SHA256` 即可得到
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤与现象
+      description: 什么时候被拦的（下载时 / 解压时 / 双击运行时）、弹窗提示了什么
+    validations:
+      required: true
+
+  - type: dropdown
+    id: whitelist
+    attributes:
+      label: 加白名单后能否正常使用
+      options:
+        - 加了信任区/白名单后可以正常用
+        - 加了还是被拦
+        - 还没试过
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图
+      description: 把杀软报毒弹窗、以及 VirusTotal 报告（若已上传）截图拖进来
+    validations:
+      required: false

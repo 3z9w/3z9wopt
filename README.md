@@ -5,6 +5,7 @@
 [![Language](https://img.shields.io/badge/language-Go%20%2B%20Wails-00ADD8.svg)](#)
 [![GitHub](https://img.shields.io/badge/GitHub-3z9w%2F3z9wopt-181717.svg)](https://github.com/3z9w/3z9wopt)
 [![Gitee](https://img.shields.io/badge/Gitee-opt3z9w%2F3z9wopt-C71D23.svg)](https://gitee.com/opt3z9w/3z9wopt)
+[![VirusTotal](https://img.shields.io/badge/VirusTotal-63%2F71%20engines%20clean-brightgreen.svg)](https://www.virustotal.com/gui/file/321993c983d405fc6fc8bd036328d0488de6aa5b5d768253354165b24802fec6)
 [![English](https://img.shields.io/badge/README-English-blue.svg)](README.en.md)
 
 ![界面演示：总览 → 垃圾清理 → 系统优化 → 启动项管理 → 磁盘空间 → 本机配置](docs/img/demo.gif)
@@ -89,6 +90,28 @@
 - 第一次用，先在「工具库 → 创建系统还原点」建一个还原点（软件内也有入口）；
 - 清理 / 优化类操作**扫描都是只读的**，勾选后才动手；
 - 出问题可在「设置 → 操作日志」里看每次改动，能还原的直接点按钮。
+
+## 杀毒软件误报说明
+
+本软件**未购买代码签名证书**，又提供 hosts 编辑、启动项管理、系统优化这类「木马也常干」的能力，因此部分杀毒引擎会把**新版本**误判为木马。这是误报，不是病毒。
+
+- 当前版本多引擎扫描：[VirusTotal 报告](https://www.virustotal.com/gui/file/321993c983d405fc6fc8bd036328d0488de6aa5b5d768253354165b24802fec6)（63/71 引擎判定干净，报毒项均为泛型启发式 / 机器学习判定，无行为证据）
+- 遇到拦截：把文件**加入杀毒软件的信任区 / 白名单**即可正常使用
+- 不想信二进制：**从源码自行构建**（见下节），或核对下载文件的 SHA256（[发布页](https://opt.3z9w.com)与 Release 说明里都有）
+
+v1.1.0 已知的误报名（作者已向各厂商提交误报申诉）：
+
+| 引擎 | 误报名 |
+|---|---|
+| Microsoft Defender | `Trojan:Win32/Bearfoos.B!ml` |
+| 腾讯电脑管家 | `Win32.Trojan.Qhost.AdH` |
+| Kaspersky | `Trojan.Win32.Qhost.qbpg` |
+| Bkav Pro | `W32.MalwareW6.C73386A` |
+| CrowdStrike | `Win/malware_confidence_60%` |
+
+> **为什么会被判成这些名字**：Qhost 家族的特征是恶意篡改 hosts 劫持 DNS，而本软件确实提供 hosts 编辑与网络修复功能，于是命中了这个家族的泛型规则。软件不劫持 DNS、不联网上报、不释放任何文件——见上文「设计原则」。
+>
+> 部分引擎的判定来自旧病毒库（例如火绒，本地最新库实测不报）。若你更新病毒库后仍被拦截，欢迎按「误报反馈」模板开 Issue，附上引擎名与检测名。
 
 ## 从源码构建
 
