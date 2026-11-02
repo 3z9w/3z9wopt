@@ -5,7 +5,10 @@ package main
 //
 // 引擎 = mftscan.go（NTFS 主文件表直读，几秒出全盘索引）。
 // 三个视图（目录分析 / 大文件 / 重复文件）共用**一次**扫描的索引。
-// 删除一律进回收站（SHFileOperation + FOF_ALLOWUNDO），误删可还原。
+// 删除一律永久删除（SHFileOperation，不带 FOF_ALLOWUNDO），不可恢复。
+// 2026-11-02 二次修复：产品上重复文件页已有「勾选副本 + 弹窗确认」两道确认，
+// 不再需要回收站兜底；技术上 FOF_ALLOWUNDO 依赖回收站配额/组策略/卷类型，
+// 100MB+ 的重复文件在部分机器上会直接返回非 0，表现成「0 项入回收站，1 项失败」。
 //
 // 2026-10-11：这一页从老版本（v2）**按功能 100% 移植** —— 重复文件判定
 // （同大小分组 → 抽样哈希 → 全量 MD5）、删除、定位的行为与参数一律照搬，
@@ -465,7 +468,7 @@ func fullMD5(path string, buf []byte) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
 
-// ---------- 删除（回收站）与打开 ----------
+// ---------- 删除（永久删除）与打开 ----------
 
 // SpaceDelResult 一条删除结果（逐条独立，互不影响）
 type SpaceDelResult struct {
@@ -474,43 +477,112 @@ type SpaceDelResult struct {
 	Err  string `json:"err"`
 }
 
-// SpaceDelete 批量删除到回收站（每个路径独立 SHFileOperation，互不影响）
+// SpaceDelete 批量永久删除（每个路径独立处理，互不影响）
+//
+// 2026-11-02 二次修复（用户反馈「不卡了，但 0 项入回收站，1 项失败，文件还在」）：
+// 产品决定：磁盘空间页删除已经过「勾选副本 + 弹窗确认」两道确认，直接永久删除，
+// 不再进回收站。技术上正好绕开一整类失败：FOF_ALLOWUNDO 依赖回收站配额、
+// 组策略、卷是否支持回收站；重复文件页筛的是 100MB+ 大文件，配额不足或策略
+// 禁用时 shell 会直接返回非 0（又带了 FOF_NOCONFIRMATION，不会弹「是否永久删除」
+// 让用户选），于是就成了「0 项成功、1 项失败」。
 func (a *App) SpaceDelete(paths []string) []SpaceDelResult {
 	out := []SpaceDelResult{}
 	for _, p := range paths {
-		err := recycleDelete(p)
+		err := spaceDeleteFile(p)
 		out = append(out, SpaceDelResult{Path: p, Ok: err == nil, Err: errStr(err)})
 	}
 	return out
 }
 
-// recycleDelete SHFileOperation 进回收站（FOF_ALLOWUNDO：误删可还原）
+// spaceDeleteFile 永久删除一个文件或目录，成功与否以「路径是否真的消失」为准。
 //
-// 2026-11-02 修（用户反馈「重复文件删不掉，最后报调用超时」）：
-// 原来这行写的是 windows.StringToUTF16Ptr(path + "\x00")。
-// x/sys/windows 的 UTF16FromString 会把内嵌的 NUL 判成非法输入并 panic
-// （"windows: string with NUL passed to StringToUTF16"）。panic 在 Wails 的
-// dispatcher 里被 recover 成 error，但那条给前端的回调是空的 —— 前端拿不到
-// callbackID，Promise 永远悬着，15 秒后判「调用超时」。也就是：
-// **SHFileOperation 一次都没被调用过**，任何文件（100MB 的单文件也一样）
-// 都删不掉，报错信息还全指向"超时"这个假象。
-// 正确做法：用 utf16 自己编码，按 shell 要求的「双 NUL 结尾列表」构造。
-// 实测（100MB 文件，D 盘进回收站）：修复前必 panic；修复后 0.06s 完成，返回 0。
-func recycleDelete(path string) error {
+// 三层保险，专治 shell 删除的玄学：
+//  1. 先剥掉只读/隐藏/系统属性 —— 这些属性会让 shell 与 os.Remove 都失败
+//  2. SHFileOperationW 永久删除（不带 FOF_ALLOWUNDO）
+//  3. shell 失败则 os.RemoveAll 兜底再删一次（不依赖 shell 会话 / COM / 回收站）
+//  4. 最后复核路径是否真的没了 —— SHFileOperation 存在「返回非 0 但实际删掉了」
+//     的情况（项目 junk_clean.go 清空回收站也是这个思路：让磁盘现状说话，不猜码）
+//
+// 历史：2026-11-02 首修时这里写的是 windows.StringToUTF16Ptr(path + "\x00")，
+// x/sys/windows 遇到内嵌 NUL 会 panic，被 Wails recover 成空回调 → 前端干等
+// 15 秒报「调用超时」，shell 一次都没调用过。参数构造现已改为 pathListUTF16，
+// 那个坑不要再踩回去。
+func spaceDeleteFile(path string) error {
+	if path == "" {
+		return fmt.Errorf("删除失败：路径为空")
+	}
+	clearDeleteAttrs(path)
+
+	var firstErr error
+	if h := shDeletePermanent(path); h != 0 {
+		firstErr = fmt.Errorf("%s（错误码 0x%x）", shDelErrText(h), h)
+	}
+	// shell 报了错也可能已经删掉了，以磁盘现状为准
+	if pathGone(path) {
+		return nil
+	}
+
+	// 兜底：直接走文件系统 API。RemoveAll 对单个文件和整棵目录树都有效。
+	clearDeleteAttrs(path)
+	if err := os.RemoveAll(path); err != nil {
+		if pathGone(path) {
+			return nil
+		}
+		return fmt.Errorf("%s；直接删除也失败：%v", delErrPrefix(firstErr), err)
+	}
+	if !pathGone(path) {
+		return fmt.Errorf("%s；文件仍然存在", delErrPrefix(firstErr))
+	}
+	return nil
+}
+
+func delErrPrefix(err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return "删除失败"
+}
+
+func pathGone(path string) bool {
+	_, err := os.Lstat(path)
+	return os.IsNotExist(err)
+}
+
+// clearDeleteAttrs 剥掉只读/隐藏/系统属性，避免它们挡住删除。
+// 失败就当没有这些属性，不阻断主流程。
+func clearDeleteAttrs(path string) {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return
+	}
+	attrs, err := windows.GetFileAttributes(p)
+	if err != nil || attrs == 0xFFFFFFFF {
+		return
+	}
+	const faReadOnly, faHidden, faSystem = 0x0001, 0x0002, 0x0004
+	want := attrs &^ uint32(faReadOnly|faHidden|faSystem)
+	if want != attrs {
+		_ = windows.SetFileAttributes(p, want)
+	}
+}
+
+// shDeleteFlags = FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI。
+// ⚠️ 不要加回 0x0040 FOF_ALLOWUNDO：见 spaceDeleteFile 的说明（大文件会在
+// 回收站配额/策略受限的机器上直接失败）。space_delete_test.go 有断言盯着。
+const shDeleteFlags = 0x0010 | 0x0004 | 0x0400
+
+// shDeletePermanent SHFileOperationW 永久删除（不带 FOF_ALLOWUNDO）。
+func shDeletePermanent(path string) uintptr {
 	src := pathListUTF16([]string{path})
 	op := &shFileOp{
 		wFunc:  3, // FO_DELETE
 		pFrom:  uintptr(unsafe.Pointer(src)),
-		fFlags: 0x0040 | 0x0010 | 0x0004 | 0x0400, // ALLOWUNDO | NOCONFIRMATION | SILENT | NOERRORUI
+		fFlags: shDeleteFlags,
 	}
 	h, _, _ := shOpProc.Call(uintptr(unsafe.Pointer(op)))
-	// pFrom 存的是 uintptr，GC 看不见这个引用；src 必须在调用期间保活，
-	// 否则极端情况下（本函数极短）缓冲区可能被回收成悬空指针。
+	// pFrom 存的是 uintptr，GC 看不见这个引用；src 必须在调用期间保活。
 	runtime.KeepAlive(src)
-	if h != 0 {
-		return fmt.Errorf("%s（错误码 0x%x）", shDelErrText(h), h)
-	}
-	return nil
+	return h
 }
 
 // pathListUTF16 构造 SHFileOperationW 要求的 UTF-16 双 NUL 结尾列表缓冲区。
@@ -528,24 +600,36 @@ func pathListUTF16(paths []string) *uint16 {
 
 // shDelErrText 把 SHFileOperation 的错误码翻成人话 —— 以前只显示 0x20 这种
 // 十六进制，用户和反馈渠道都看不懂，白丢一次排查线索。
+// 0x85 DE_FILE_TOO_LARGE / 0x402 是 FOF_ALLOWUNDO 时代「文件太大放不进回收站」
+// 的典型返回码；现已改为永久删除，一般不会再见，留着方便看懂老机器的日志。
 func shDelErrText(h uintptr) string {
 	switch h {
+	case 0x2:
+		return "删除失败：文件不存在"
+	case 0x3:
+		return "删除失败：路径不存在"
+	case 0x5:
+		return "删除失败：没有权限，请右键以管理员身份运行"
 	case 0x20:
-		return "删除失败：文件被占用或没有权限"
+		return "删除失败：文件正被其它程序占用"
 	case 0x21:
-		return "删除失败：路径层级太深"
+		return "删除失败：文件被其它程序锁定"
 	case 0x71:
 		return "删除失败：源和目标指向同一个文件"
 	case 0x74:
 		return "删除失败：不能删除根目录"
 	case 0x78:
-		return "删除失败：文件名太长"
-	case 0x7C:
-		return "删除失败：路径无效"
-	case 0x7D:
-		return "删除失败：路径无效"
+		return "删除失败：源文件拒绝访问"
+	case 0x79:
+		return "删除失败：路径层级太深"
+	case 0x7C, 0x7D, 0x81:
+		return "删除失败：文件名或路径无效"
+	case 0x85:
+		return "删除失败：文件太大，无法移入回收站"
 	case 0x402:
-		return "删除失败：未知错误"
+		return "删除失败：系统返回未知错误（常见于回收站不可用）"
+	case 0x4C7:
+		return "删除失败：操作被取消"
 	}
 	return "删除失败"
 }

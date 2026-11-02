@@ -12,7 +12,7 @@
      · 目录分析    SpaceChildren / SpaceCrumbs —— 列表 + 矩形图两种视图
      · 大文件      SpaceTopFiles(minSize, limit)
      · 重复文件    SpaceDupScanAsync —— 同大小分组 → 抽样哈希 → 全量 MD5 确认
-     · 删除        SpaceDelete —— 一律进**回收站**，误删可还原
+     · 删除        SpaceDelete —— 直接**永久删除**（勾选 + 弹窗两道确认），不可恢复
      · 定位        SpaceOpen —— 资源管理器选中该文件
 
    与老版本唯一的两处差别（用户 2026-10-11 定的）：
@@ -72,7 +72,7 @@ function dkHint(name, path, isDir){
     [/\\appdata/, '勿手删', 'amb', '应用数据目录：软件的配置和缓存都在这里，也是卸载残留的高发区。'],
     [/\\node_modules$/, '可删', 'amb', '项目第三方依赖包，删除后需要重新安装依赖项目才能运行。'],
     [/\\users(\\|$)/, '一般', '', '用户数据根目录：桌面、文档、下载都在其中的子文件夹里。'],
-    [/^downloads$/, '一般', '', '下载目录：浏览器和下载工具的默认保存位置，删除前确认没有还要的文件（会进回收站，可还原）。'],
+    [/^downloads$/, '一般', '', '下载目录：浏览器和下载工具的默认保存位置，删除前确认没有还要的文件（删除后不可恢复）。'],
     [/\.dll$/, '勿手删', 'red', '程序组件库：运行时被程序加载，删除会导致对应软件报错。'],
     [/\.sys$/, '禁删', 'red', '驱动 / 系统内核文件，删除可能导致蓝屏或无法开机。'],
     [/\.exe$/, '勿手删', 'amb', '可执行程序：卸载软件请用「应用卸载」，直接删除会留下残留。'],
@@ -82,8 +82,8 @@ function dkHint(name, path, isDir){
     if(R[i][0].test(p)) return { tag: R[i][1], cls: R[i][2], txt: R[i][3] };
   }
   return isDir
-    ? { tag: '', cls: '', txt: '普通目录：删除会连带删除其中的全部内容，删除前建议点进去看一眼（删除进回收站，可还原）。' }
-    : { tag: '', cls: '', txt: '普通文件：删除前确认不再需要（删除进回收站，可还原）。' };
+    ? { tag: '', cls: '', txt: '普通目录：删除会连带删除其中的全部内容，删除前建议点进去看一眼（永久删除，不可恢复）。' }
+    : { tag: '', cls: '', txt: '普通文件：删除前确认不再需要（永久删除，不可恢复）。' };
 }
 function dkTag(h){ return h.cls ? '<i class="sp-tag t-' + h.cls + '">' + h.tag + '</i>' : ''; }
 
@@ -101,7 +101,7 @@ function dkRowHtml(r, max){
     + '<span class="num tm">' + dkTime(r.mtime) + '</span>'
     + '<span class="num acts">'
     +   '<button class="sp-act" data-open="' + r.frn + '" title="在资源管理器中显示所在位置">' + ico('search', 15) + '</button>'
-    +   '<button class="sp-act danger" data-del="' + r.frn + '" title="删除到回收站（可还原）">' + ico('trash', 15) + '</button>'
+    +   '<button class="sp-act danger" data-del="' + r.frn + '" title="直接删除（不可恢复）">' + ico('trash', 15) + '</button>'
     + '</span></div>';
 }
 
@@ -139,7 +139,7 @@ function dkPaint(){
       ? 'MFT 直读索引 · <b>' + dkEsc(DK.stats.drive || DK.drive) + '</b> 盘 · '
         + (DK.stats.files || 0).toLocaleString() + ' 个文件，三个视图共用一次扫描'
       : 'MFT 直读引擎：百万文件全盘索引只需数秒（需管理员权限，仅支持 NTFS 盘）。'
-        + '删文件一律进<b>回收站</b>，误删可还原。';
+        + '删文件一律<b>永久删除</b>，不可恢复。';
   }
   var scan = dkEl('spScan');
   if(scan) scan.disabled = !!DK.scanning;
@@ -411,7 +411,7 @@ function dkLoadTop(){
         + '<span class="num tm">' + dkTime(r.mtime) + '</span>'
         + '<span class="num acts">'
         +   '<button class="sp-act" data-open-path="' + dkEsc(r.path) + '" title="在资源管理器中显示所在位置">' + ico('search', 15) + '</button>'
-        +   '<button class="sp-act danger" data-del-path="' + dkEsc(r.path) + '" title="删除到回收站（可还原）">' + ico('trash', 15) + '</button>'
+        +   '<button class="sp-act danger" data-del-path="' + dkEsc(r.path) + '" title="直接删除（不可恢复）">' + ico('trash', 15) + '</button>'
         + '</span></div>';
     }).join('') : '<div class="sp-norow">没有超过 ' + fmtSize(DK.topMin) + ' 的文件</div>';
   }).catch(function(){
@@ -516,7 +516,8 @@ function dkConfirmDelete(paths, title){
   box.style.width = 'min(520px,94vw)';
   box.innerHTML = '<div class="modal-t"><span style="color:var(--danger)">' + ico('warn', 20) + '</span>确认删除</div>'
     + '<div class="modal-d">' + dkEsc(title) + '</div>'
-    + '<div class="sp-del-note">文件将移入<b>回收站</b>，误删可还原；确认后立即执行。</div>'
+    + '<div class="sp-del-note" style="color:var(--danger);background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.35)">'
+    +   '删除后<b style="color:var(--danger)">不可恢复</b>，文件不会进入回收站；确认后立即永久删除。</div>'
     + '<div class="modal-f"><button class="btn" id="mCancel">取消</button>'
     + '<button class="btn primary" id="spDelGo">' + ico('trash', 16) + '删除</button></div>';
   dkEl('modal').classList.add('open');
@@ -527,8 +528,13 @@ function dkConfirmDelete(paths, title){
     callGo('SpaceDelete', paths).then(function(res){
       var fail = (res || []).filter(function(r){ return !r.ok; });
       closeModal();
-      if(fail.length) toast((paths.length - fail.length) + ' 项已入回收站，' + fail.length + ' 项失败', 'warn');
-      else toast(paths.length + ' 项已移入回收站', 'ok');
+      if(fail.length){
+        /* 把后端的具体原因带出来：以前只说「1 项失败」，用户和作者都不知道
+           是被占用、没权限还是路径无效，反馈回来只能靠猜。 */
+        var why = fail[0].err ? '（' + dkEsc(fail[0].err) + '）' : '';
+        toast((paths.length - fail.length) + ' 项已删除，' + fail.length + ' 项失败' + why, 'warn');
+      }
+      else toast(paths.length + ' 项已删除（不可恢复）', 'ok');
       if(DK.tab === 'dir'){ DK.rows = []; DK.dirLoaded = false; dkRenderDir(); }
       if(DK.tab === 'top') dkLoadTop();
       if(DK.tab === 'dup'){ DK.dupGroups = []; DK.dupFreed = 0; dkRenderDup(); }
