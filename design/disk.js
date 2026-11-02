@@ -115,7 +115,7 @@ function dkRowHtml(r, max){
 /* ── 页面骨架 ───────────────────────────────────────────────────────────── */
 window.renderDisk = function(){
   var tabs = [['dir', 'folder', '目录分析'], ['top', 'file', '大文件'], ['dup', 'copy', '重复文件']];
-  return '<div class="page-head" style="display:flex;align-items:flex-end;justify-content:space-between;gap:14px">'
+  return '<div class="page-head" style="display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-bottom:10px">'
     + '<div><div class="page-title">磁盘空间</div>'
     + '<div class="page-sub" id="spSub">正在读取磁盘列表…</div></div>'
     + '<button class="btn sm primary" id="spScan"' + (DK.scanning ? ' disabled' : '') + '>'
@@ -145,8 +145,7 @@ function dkPaint(){
     sub.innerHTML = DK.ready
       ? 'MFT 直读索引 · <b>' + dkEsc(DK.stats.drive || DK.drive) + '</b> 盘 · '
         + (DK.stats.files || 0).toLocaleString() + ' 个文件，三个视图共用一次扫描'
-      : 'MFT 直读引擎：百万文件全盘索引只需数秒（需管理员权限，仅支持 NTFS 盘）。'
-        + '删文件一律<b>永久删除</b>，不可恢复；系统 / 程序 / 游戏文件<b>禁止删除</b>，不提供解锁。';
+      : 'MFT 直读引擎：百万文件全盘索引只需数秒';
   }
   var scan = dkEl('spScan');
   if(scan) scan.disabled = !!DK.scanning;
