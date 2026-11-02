@@ -65,35 +65,16 @@ go build -tags desktop,production -ldflags "-s -w -H windowsgui -X main.appVersi
 The UI lives entirely in `design/ui-prototype.html` (single file, inline CSS/JS — no frontend build chain).
 Version and build date are injected at compile time, so a fresh clone shows its own values.
 
-## Antivirus false positives
+## False positives from security software
 
-This tool is **not code-signed**, and it does things trojans also do — editing the hosts file, managing
-startup items, tuning system settings. As a result some engines flag **new releases** as trojans.
-These are false positives.
+This tool is **not code-signed**. Some security engines flag **new releases** as suspicious; these are
+false positives.
 
-- Multi-engine scan of the current build: [VirusTotal report](https://www.virustotal.com/gui/file/321993c983d405fc6fc8bd036328d0488de6aa5b5d768253354165b24802fec6)
-  — 63/71 engines report it clean; every flag is a generic heuristic / ML verdict with no behavioural evidence.
-- If you get blocked: **add the file to your antivirus whitelist / trusted zone**.
+- Multi-engine scan of the current build: [scan report](https://www.virustotal.com/gui/file/321993c983d405fc6fc8bd036328d0488de6aa5b5d768253354165b24802fec6) — 63/71 engines clean
+- If you get blocked: **add the file to your security software's whitelist / trusted zone**
 - Prefer not to trust a binary? **Build from source** (see above) or verify the SHA256 published on the
-  [download page](https://opt.3z9w.com) and in the Release notes.
-
-Known false-positive names for v1.1.0 (reports already filed with each vendor):
-
-| Engine | Reported as |
-|---|---|
-| Microsoft Defender | `Trojan:Win32/Bearfoos.B!ml` |
-| Tencent PC Manager | `Win32.Trojan.Qhost.AdH` |
-| Kaspersky | `Trojan.Win32.Qhost.qbpg` |
-| Bkav Pro | `W32.MalwareW6.C73386A` |
-| CrowdStrike | `Win/malware_confidence_60%` |
-
-> **Why these names**: the Qhost family is defined by malicious hosts-file hijacking, and this tool
-> legitimately edits the hosts file for network repair — so it trips that generic family rule.
-> It does not hijack DNS, phone home, or drop payloads (see "Design principles" above).
->
-> Some verdicts come from stale signatures (Huorong, for example, does not flag the file with its
-> current database). If you are still blocked after updating your antivirus, please open an issue
-> using the false-positive template with the engine name and detection name.
+  [download page](https://opt.3z9w.com) and in the Release notes
+- Detection names and appeal status: [false-positive name list](https://github.com/3z9w/3z9wopt/blob/main/docs/false-positive-names.md)
 
 ## Disclaimer
 
