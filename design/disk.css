@@ -21,11 +21,15 @@
 .sp-body{flex:1 0 auto;min-width:0}
 
 /* ── 1 磁盘卡 ─────────────────────────────────────────────────────────── */
-/* minmax 从 212px 收到 196px：盘多时少换一行，整块能省下近一整行的高度。
-   卷标名有 ellipsis 兜底，不会撑破卡片。 */
+/* 2026-11-02 二次压缩（用户：盘符卡再压，概览卡要比盘符卡还矮）：
+   把「进度条」与「已用 / 总量」并进同一行（.sp-drive-foot），卡片由三行压成两行；
+   固定 height:52px（全局 box-sizing:border-box），比上一次的约 66px 再降一档。
+   minmax 196px 让盘多时少换一行，卷标名有 ellipsis 兜底。 */
 .sp-drives{display:grid;grid-template-columns:repeat(auto-fit,minmax(196px,1fr));gap:8px;margin-bottom:8px}
 .sp-drive{
-  position:relative;text-align:left;padding:8px 12px;border-radius:var(--r1);cursor:pointer;
+  position:relative;text-align:left;height:52px;padding:6px 10px;overflow:hidden;
+  display:flex;flex-direction:column;justify-content:center;gap:5px;
+  border-radius:var(--r1);cursor:pointer;
   background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
   border:1px solid var(--stroke);box-shadow:var(--sh1);transition:.18s;
 }
@@ -36,24 +40,39 @@
 .sp-drive.on:hover{border-color:var(--info);box-shadow:0 0 0 3px var(--glow),var(--sh2)}
 .sp-drive.off{opacity:.5;cursor:not-allowed}
 .sp-drive-top{display:flex;align-items:baseline;gap:8px}
-.sp-drive-top b{font-size:16px;font-weight:700;letter-spacing:-.01em;color:var(--tx1)}
+.sp-drive-top b{font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--tx1)}
 .sp-drive.on .sp-drive-top b{color:var(--info)}
-.sp-drive-top span{font-size:11.5px;color:var(--tx2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sp-drive-top i{font-style:normal;font-size:11.5px;font-weight:650;color:var(--info);font-variant-numeric:tabular-nums}
-.sp-drive-bar{height:5px;border-radius:4px;margin:6px 0 5px;overflow:hidden;background:var(--glass-hi)}
+.sp-drive-top span{font-size:11px;color:var(--tx2);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-drive-top i{font-style:normal;font-size:11px;font-weight:650;color:var(--info);font-variant-numeric:tabular-nums}
+.sp-drive-foot{display:flex;align-items:center;gap:8px;min-width:0}
+.sp-drive-bar{flex:1;min-width:0;height:4px;border-radius:4px;overflow:hidden;background:var(--glass-hi)}
 .sp-drive-bar span{display:block;height:100%;border-radius:4px;background:var(--info);transition:width .5s}
-.sp-drive-sub{font-size:11px;color:var(--tx3);font-variant-numeric:tabular-nums}
+.sp-drive-sub{flex:0 0 auto;font-size:10.5px;color:var(--tx3);white-space:nowrap;font-variant-numeric:tabular-nums}
 
 /* ── 2 概览四卡 ───────────────────────────────────────────────────────── */
+/* 用户要求「概览四卡要比盘符卡还矮」：改成两列网格 —— 标题与数值同行（数值靠右），
+   说明放第二行跨两列；固定 height:42px，明确比盘符卡的 52px 矮一档。
+   四张卡在同一 grid 行里 stretch 等高，不会出现高低不齐。 */
 .sp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px;margin-bottom:8px}
 .sp-card{
-  padding:7px 12px;border-radius:var(--r2);
+  height:42px;padding:4px 10px;border-radius:var(--r2);overflow:hidden;
+  display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;
+  align-content:center;gap:0 8px;
   background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
   border:1px solid var(--stroke);
 }
-.sp-card .l{font-size:11px;color:var(--tx3)}
-.sp-card .v{font-size:16px;font-weight:680;margin-top:1px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.sp-card .s{font-size:10.5px;color:var(--tx3);margin-top:1px}
+.sp-card .l{
+  grid-column:1;grid-row:1;font-size:10.5px;color:var(--tx3);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.sp-card .v{
+  grid-column:2;grid-row:1;font-size:15px;font-weight:680;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.sp-card .s{
+  grid-column:1 / -1;grid-row:2;font-size:10px;color:var(--tx3);margin-top:1px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 
 /* ── 3 三个视图的 Tab（目录分析 / 大文件 / 重复文件）───────────────────── */
 .sp-seg{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}

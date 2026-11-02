@@ -160,9 +160,12 @@ function dkRenderDrives(){
       + ' data-drive="' + dkEsc(d.drive) + '"' + (d.ntfs ? '' : ' disabled title="仅支持 NTFS 磁盘"') + '>'
       + '<div class="sp-drive-top"><b>' + dkEsc(d.drive) + '</b>'
       +   '<span>' + dkEsc(d.label || d.name || (d.ntfs ? '本地磁盘' : '非 NTFS')) + '</span><i>' + pct + '%</i></div>'
-      + '<div class="sp-drive-bar"><span style="width:' + pct + '%"></span></div>'
-      + '<div class="sp-drive-sub">' + fmtSize(used) + ' / ' + fmtSize(d.total)
-      +   (d.drive === DK.drive && DK.scanning ? ' · 扫描中…' : '') + '</div></button>';
+      /* 进度条与「已用 / 总量」并成一行：盘符卡由三行压成两行，高度再降一档 */
+      + '<div class="sp-drive-foot">'
+      +   '<div class="sp-drive-bar"><span style="width:' + pct + '%"></span></div>'
+      +   '<span class="sp-drive-sub">' + fmtSize(used) + ' / ' + fmtSize(d.total)
+      +     (d.drive === DK.drive && DK.scanning ? ' · 扫描中…' : '') + '</span>'
+      + '</div></button>';
   }).join('');
 }
 
