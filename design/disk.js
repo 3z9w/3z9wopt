@@ -13,9 +13,9 @@
      · 大文件      SpaceTopFiles(minSize, limit)
    · 重复文件    SpaceDupScanAsync —— 同大小分组 → 抽样哈希 → 全量 MD5 确认
    · 可删除性    SpaceAssess / DupGroup.risks —— 系统 / 程序组件 / 游戏 / 用户数据
-                 分级，每组按风险挑正本（后端 space_safety.go），高风险项默认锁定
-   · 删除        SpaceDelete / SpaceDeleteUnlocked —— 永久删除，不可恢复；
-                 后端删除前再复核一次，系统 / 受保护文件一律拒绝
+                 分级，每组按风险挑正本（后端 space_safety.go）；block / high
+                 一律禁止删除，不提供解锁（2026-11-02 用户决定）
+   · 删除        SpaceDelete —— 永久删除，不可恢复；后端删除前再复核一次
    · 定位        SpaceOpen —— 资源管理器选中该文件
 
    与老版本唯一的两处差别（用户 2026-10-11 定的）：
@@ -33,8 +33,11 @@ window.DK = window.DK || {
   tab: 'dir', frn: 5, crumbs: [], rows: [], showN: 300, sortBy: 'size', sortDir: 1,
   view: 'map',                  /* 目录分析的默认视图：矩形图（老版本默认列表，用户要求改） */
   topRows: [], topMin: 1073741824,
-  dupGroups: [], dupFreed: 0, dupScanning: false, dupPct: 0, dupStage: '', dupMin: 104857600,
-  dupUnlock: {},                 /* 每组「解锁高风险项」的状态：默认全锁，重扫即清空 */
+  dupGroups: [], dupFreed: 0, dupScanning: false, dupPct: 0, dupStage: '',
+  dupMin: 104857600,             /* 阈值档位与默认值全部保持原样：10MB / 100MB / 1GB，默认 100MB */
+  dupSearched: false,            /* 是否查过一次 —— 用来区分「没查」和「查完没结果」 */
+  dupErr: '',                    /* 查找失败的具体原因，直接显示在页面上 */
+  dupDiscard: false,             /* 换盘后丢弃上一盘晚到的异步结果，避免张冠李戴 */
   stats: {}, dirLoaded: false, evtBound: false
 };
 var DK = window.DK;
@@ -143,7 +146,7 @@ function dkPaint(){
       ? 'MFT 直读索引 · <b>' + dkEsc(DK.stats.drive || DK.drive) + '</b> 盘 · '
         + (DK.stats.files || 0).toLocaleString() + ' 个文件，三个视图共用一次扫描'
       : 'MFT 直读引擎：百万文件全盘索引只需数秒（需管理员权限，仅支持 NTFS 盘）。'
-        + '删文件一律<b>永久删除</b>，不可恢复；系统 / 程序 / 游戏文件会先按风险自动锁定。';
+        + '删文件一律<b>永久删除</b>，不可恢复；系统 / 程序 / 游戏文件<b>禁止删除</b>，不提供解锁。';
   }
   var scan = dkEl('spScan');
   if(scan) scan.disabled = !!DK.scanning;
@@ -432,70 +435,89 @@ function dkDupProgHtml(){
 function dkRenderDup(){
   var host = dkEl('spBody');
   if(!host) return;
+  var mins = [10 << 20, 100 << 20, 1 << 30];
   host.innerHTML = '<div class="sp-crumb-bar">'
     + '<div class="sp-minsel">查找同一磁盘上大小超过 <select id="spDupMin">'
-    +   [10 << 20, 100 << 20, 1 << 30].map(function(v){
+    +   mins.map(function(v){
           return '<option value="' + v + '"' + (v === DK.dupMin ? ' selected' : '') + '>' + fmtSize(v) + '</option>';
         }).join('')
     + ' </select>的重复文件</div><span style="flex:1"></span>'
     + '<button class="btn sm primary" id="spDupGo"' + (DK.dupScanning ? ' disabled' : '') + '>'
-    +   ico('copy', 14) + '开始查找</button></div>'
-    + (DK.dupScanning ? '<div class="card sp-dupcard">' + dkDupProgHtml()
+    +   ico('copy', 14) + (DK.dupSearched ? '重新查找' : '开始查找') + '</button></div>'
+    + (DK.dupScanning ? '<div class="card sp-dupcard" id="spDupProgCard">' + dkDupProgHtml()
         + '<p class="sp-hint2">先按大小分组，再对疑似文件抽样 + 全量哈希确认，零误判。</p></div>' : '')
     + '<div id="spDupList"></div>';
 
   var list = dkEl('spDupList');
   if(!list) return;
-  if(!DK.dupGroups.length && !DK.dupScanning){
+
+  /* 五种状态分开说清楚：以前「查完 0 组」也画成「还没有分析结果」，
+     用户以为根本没扫描（2026-11-02 E 盘反馈就是这个）。 */
+  if(DK.dupScanning) return;
+  if(DK.dupErr){
+    list.innerHTML = '<div class="card"><div class="empty sp-empty">'
+      + '<div class="empty-ico" style="color:var(--danger)">' + ico('warn', 30) + '</div>'
+      + '<div class="empty-t">查找失败</div>'
+      + '<div class="empty-d">' + dkEsc(DK.dupErr) + '</div>'
+      + '<button class="btn sm primary" data-dup-start style="margin-top:12px">重试查找</button>'
+      + '</div></div>';
+    return;
+  }
+  if(!DK.dupSearched){
     list.innerHTML = '<div class="card"><div class="empty sp-empty">'
       + '<div class="empty-ico" style="color:var(--info)">' + ico('copy', 30) + '</div>'
-      + '<div class="empty-t">还没有分析结果</div>'
-      + '<div class="empty-d">重复文件 = 同一磁盘上内容完全相同的文件（哈希确认）。'
-      + '<b>内容相同，不代表有一份是多余的</b>：程序组件、游戏资源、系统文件会被自动识别并锁定，'
-      + '每组只保留最不该删的那一份。</div></div></div>';
+      + '<div class="empty-t">还没查找过</div>'
+      + '<div class="empty-d">' + (DK.ready
+          ? '已选 <b>' + dkEsc(DK.stats.drive || DK.drive) + '</b> 盘，索引已就绪。点下方按钮比对文件内容，找出完全相同的副本。'
+          : '请先点上方磁盘卡扫描一个磁盘。')
+      + '<br>重复文件 = 内容完全相同的文件（哈希确认）；<b>内容相同，不代表有一份是多余的</b>，'
+      + '系统 / 程序 / 游戏文件会自动识别并禁止删除。</div>'
+      + (DK.ready ? '<button class="btn sm primary" data-dup-start style="margin-top:12px">'
+          + ico('copy', 14) + '开始查找</button>' : '')
+      + '</div></div>';
+    return;
+  }
+  if(!DK.dupGroups.length){
+    list.innerHTML = '<div class="card"><div class="empty sp-empty">'
+      + '<div class="empty-ico" style="color:var(--info)">' + ico('copy', 30) + '</div>'
+      + '<div class="empty-t">查找完成：没有发现重复文件</div>'
+      + '<div class="empty-d">已对 <b>' + dkEsc(DK.stats.drive || DK.drive) + '</b> 盘 '
+      +   (DK.stats.files || 0).toLocaleString() + ' 个文件完成比对；'
+      +   '当前只查找 <b>≥ ' + fmtSize(DK.dupMin) + '</b> 的文件，这个阈值下没有内容完全相同的副本。<br>'
+      +   '可以点「重新查找」再确认一次，或换一个磁盘试试。</div>'
+      + '<button class="btn sm" data-dup-start style="margin-top:12px">重新查找</button>'
+      + '</div></div>';
     return;
   }
   if(DK.dupFreed) dkRenderStats();
   list.innerHTML = '<div class="sp-dup-sum">发现 <b>' + DK.dupGroups.length + '</b> 组重复，'
     + '最多可释放 <b>' + fmtSize(DK.dupFreed) + '</b>。'
-    + '<span class="sp-hint2">已按风险分级：系统 / 受保护文件<b>禁止删除</b>，程序与游戏文件<b>默认锁定</b>，'
-    + '每组自动保留正本（不再是路径字母序第一份）。</span></div>'
+    + '<span class="sp-hint2">已按风险分级：系统 / 程序 / 游戏 / 用户数据文件<b>一律禁止删除</b>，'
+    + '不提供解锁；每组自动保留最不该删的那一份（正本）。</span></div>'
     + DK.dupGroups.map(function(g, gi){
         var risks = g.risks || [];
         var keep = (typeof g.keep === 'number' && g.keep >= 0 && g.keep < g.paths.length) ? g.keep : 0;
-        var unlocked = !!DK.dupUnlock[gi];
-        var nBlock = 0, nHigh = 0;
-        risks.forEach(function(r){
-          if(r.level === 'block') nBlock++;
-          else if(r.level === 'high') nHigh++;
-        });
-        var note = (nBlock || nHigh)
-          ? '<span class="sp-dupg-note">' + (nBlock ? nBlock + ' 项禁删' : '')
-            + (nBlock && nHigh ? ' · ' : '')
-            + (nHigh ? nHigh + ' 项高风险' + (unlocked ? '（已解锁）' : '（已锁定）') : '') + '</span>'
-          : '';
-        var unlockBtn = nHigh
-          ? '<button class="btn sm" data-dup-unlock="' + gi + '"'
-            + ' title="' + (unlocked ? '重新锁定高风险项' : '解锁后才可勾选程序 / 游戏文件') + '">'
-            +   ico('warn', 13) + (unlocked ? '重新锁定' : '解锁高风险项') + '</button>'
+        var nForbid = 0;
+        risks.forEach(function(r){ if(r.level === 'block' || r.level === 'high') nForbid++; });
+        var note = nForbid
+          ? '<span class="sp-dupg-note forbid">' + nForbid + ' 项禁止删除</span>'
           : '';
         return '<div class="card sp-dupgroup" data-gi="' + gi + '">'
           + '<div class="sp-dupg-head"><span class="sz">' + fmtSize(g.size) + ' × ' + g.paths.length + ' 份</span>'
           + '<span class="freed">删多余可释放 ' + fmtSize(g.size * (g.paths.length - 1)) + '</span>'
-          + note + '<span style="flex:1"></span>' + unlockBtn
+          + note + '<span style="flex:1"></span>'
           + '<button class="btn sm danger sp-dup-del" data-gi="' + gi + '">'
           +   ico('trash', 14) + '删除勾选副本</button></div>'
           + g.paths.map(function(p, pi){
               var r = risks[pi] || { level: 'caution', tags: ['普通文件'], reason: '未能评估风险，请自行确认' };
               var isKeep = (pi === keep);
               var lv = r.level;
-              var locked = isKeep || lv === 'block' || (lv === 'high' && !unlocked);
-              var cls = lv === 'block' ? 't-red' : lv === 'high' ? 't-amb' : lv === 'safe' ? 't-grn' : 't-yel';
-              var tagTxt = isKeep ? '保留·正本'
-                         : lv === 'block' ? '禁止删除'
-                         : (lv === 'high' && !unlocked) ? '默认锁定' : '副本';
+              var forbid = (lv === 'block' || lv === 'high');
+              var locked = isKeep || forbid;
+              var cls = forbid ? 't-red' : lv === 'safe' ? 't-grn' : 't-yel';
+              var tagTxt = isKeep ? '保留·正本' : forbid ? '禁止删除' : '副本';
               var rowCls = 'sp-duppath' + (isKeep ? ' keep' : '')
-                         + (lv === 'block' ? ' blocked' : '')
+                         + (forbid ? ' blocked' : '')
                          + (locked && !isKeep ? ' locked' : '');
               var why = (r.tags && r.tags.length ? '【' + r.tags.join(' / ') + '】' : '') + (r.reason || '');
               return '<label class="' + rowCls + '" title="' + dkEsc(why) + '">'
@@ -517,11 +539,30 @@ function dkStartScan(drive){
   if(DK.scanning) return;
   DK.drive = drive; DK.scanning = true; DK.ready = false; DK.pct = 0; DK.err = '';
   DK.frn = 5; DK.rows = []; DK.crumbs = []; DK.dirLoaded = false;
-  DK.topRows = []; DK.dupGroups = []; DK.dupFreed = 0; DK.dupUnlock = {}; DK.stats = {};
+  DK.topRows = []; DK.dupGroups = []; DK.dupFreed = 0;
+  DK.dupSearched = false; DK.dupErr = ''; DK.dupPct = 0; DK.dupDiscard = true;
+  /* 上一盘若还在做哈希比对，先让它停，结果由 dupDiscard 丢弃 */
+  if(DK.dupScanning) callGo('SpaceDupStop').catch(function(){});
+  DK.dupScanning = false; DK.stats = {};
   dkPaint();
   callGo('SpaceScanAsync', drive).catch(function(e){
     DK.scanning = false; DK.err = String(e && e.message ? e.message : e);
     dkPaint();
+  });
+}
+
+/* 开始 / 重新查找重复文件：统一入口，进度由 dup:progress / dup:done 驱动 */
+function dkStartDup(minOverride){
+  var sel = dkEl('spDupMin');
+  if(minOverride) DK.dupMin = +minOverride;
+  else if(sel) DK.dupMin = +sel.value;
+  DK.dupScanning = true; DK.dupSearched = false; DK.dupErr = ''; DK.dupDiscard = false;
+  DK.dupGroups = []; DK.dupFreed = 0; DK.dupPct = 0; DK.dupStage = '分组中';
+  dkRenderDup();
+  callGo('SpaceDupScanAsync', DK.dupMin).catch(function(ex){
+    DK.dupScanning = false;
+    DK.dupErr = '查找失败：' + (ex && ex.message ? ex.message : ex);
+    if(DK.tab === 'dup') dkRenderDup();
   });
 }
 
@@ -531,6 +572,9 @@ function dkSwitchTab(tab){
     b.classList.toggle('on', b.getAttribute('data-dtab') === tab);
   });
   dkRenderBody();
+  /* 切到重复文件页且索引已就绪时自动查一次：点了磁盘卡就期望看到结果，
+     不该还要猜「是不是没扫描」。换盘会重置 dupSearched，所以每个盘各查一次。 */
+  if(tab === 'dup' && DK.ready && !DK.dupSearched && !DK.dupScanning) dkStartDup();
 }
 
 function dkOpenPath(frnOrPath){
@@ -545,31 +589,31 @@ function dkOpenPath(frnOrPath){
 }
 
 /* 删除确认：删文件要用户拍板，而且**删之前让后端再复核一次**。
-   扫描完到现在可能过了很久：文件可能刚被程序占用、刚被服务引用，
-   前端的禁用状态也挡不住直接调用绑定 —— 真正的闸门在 SpaceDelete。 */
+   扫描完到现在可能过了很久：文件可能刚被程序占用、刚被服务引用；
+   前端禁用状态也挡不住直接调用绑定。block / high 一律不进弹窗，
+   本软件不提供任何解锁入口（2026-11-02 用户决定）。 */
 function dkConfirmDelete(paths, title){
   callGo('SpaceAssess', paths).then(function(risks){
     var rs = risks || [];
-    var blocked = rs.filter(function(r){ return r.level === 'block'; });
-    if(blocked.length){
-      toast('已阻止删除：' + blocked.length + ' 项属于系统 / 受保护文件（'
-        + ((blocked[0].tags && blocked[0].tags[0]) || '禁止删除') + '），不能删除', 'danger');
+    var forbidden = rs.filter(function(r){ return r.level === 'block' || r.level === 'high'; });
+    if(forbidden.length){
+      toast('已阻止删除：' + forbidden.length + ' 项属于禁止删除的文件（'
+        + ((forbidden[0].tags && forbidden[0].tags[0]) || '禁删') + '），本软件不提供解锁', 'danger');
       return;
     }
-    var high = rs.filter(function(r){ return r.level === 'high'; });
-    dkShowDeleteModal(paths, title, rs, high.length > 0);
+    dkShowDeleteModal(paths, title, rs);
   }).catch(function(){
-    /* 评估拿不到就按最保守的来：弹窗照开，但只走默认档（后端仍会拦 high/block） */
-    dkShowDeleteModal(paths, title, [], false);
+    /* 评估拿不到就按最保守的来：弹窗照开，后端仍会拦 block / high */
+    dkShowDeleteModal(paths, title, []);
   });
 }
 
-function dkShowDeleteModal(paths, title, risks, needAck){
+function dkShowDeleteModal(paths, title, risks){
   var box = dkEl('modalBox');
   if(!box) return;
   box.style.width = 'min(560px,94vw)';
   var rows = (risks || []).slice(0, 6).map(function(r){
-    var cls = r.level === 'high' ? 't-amb' : r.level === 'safe' ? 't-grn' : 't-yel';
+    var cls = r.level === 'safe' ? 't-grn' : 't-yel';
     return '<div class="sp-risk-row"><i class="sp-tag ' + cls + '">'
       + dkEsc((r.tags && r.tags[0]) || '普通文件') + '</i>'
       + '<span title="' + dkEsc(r.path) + '">' + dkEsc(r.path) + '</span></div>';
@@ -579,26 +623,16 @@ function dkShowDeleteModal(paths, title, risks, needAck){
   box.innerHTML = '<div class="modal-t"><span style="color:var(--danger)">' + ico('warn', 20) + '</span>确认删除</div>'
     + '<div class="modal-d">' + dkEsc(title) + '</div>'
     + (rows ? '<div class="sp-risk-list">' + rows + more + '</div>' : '')
-    + (needAck
-        ? '<div class="sp-del-note" style="color:var(--warn);background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.35)">'
-          + '其中含<b>程序 / 游戏文件</b>：即使现在没在运行，删除后软件或游戏下次启动可能报错、缺功能甚至需要重装。</div>'
-          + '<label class="sp-risk-ack"><input type="checkbox" id="spRiskAck"> 我已了解风险，确认仍要删除这些文件</label>'
-        : '')
     + '<div class="sp-del-note" style="color:var(--danger);background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.35)">'
     +   '删除后<b style="color:var(--danger)">不可恢复</b>，文件不会进入回收站；确认后立即永久删除。</div>'
     + '<div class="modal-f"><button class="btn" id="mCancel">取消</button>'
-    + '<button class="btn primary" id="spDelGo"' + (needAck ? ' disabled' : '') + '>'
-    +   ico('trash', 16) + '删除</button></div>';
+    + '<button class="btn primary" id="spDelGo">' + ico('trash', 16) + '删除</button></div>';
   dkEl('modal').classList.add('open');
   dkEl('mCancel').onclick = closeModal;
-  var ack = dkEl('spRiskAck'), go = dkEl('spDelGo');
-  if(ack) ack.onchange = function(){ go.disabled = !ack.checked; };
+  var go = dkEl('spDelGo');
   go.onclick = function(){
     go.disabled = true; go.textContent = '删除中…';
-    /* 只有「列表里解锁 + 弹窗里再次确认」两道都过了，才走 Unlocked 档；
-       block 档后端无论如何都不放行。 */
-    var fn = needAck ? 'SpaceDeleteUnlocked' : 'SpaceDelete';
-    callGo(fn, paths).then(function(res){
+    callGo('SpaceDelete', paths).then(function(res){
       var fail = (res || []).filter(function(r){ return !r.ok; });
       closeModal();
       if(fail.length){
@@ -608,7 +642,7 @@ function dkShowDeleteModal(paths, title, risks, needAck){
       else toast(paths.length + ' 项已删除（不可恢复）', 'ok');
       if(DK.tab === 'dir'){ DK.rows = []; DK.dirLoaded = false; dkRenderDir(); }
       if(DK.tab === 'top') dkLoadTop();
-      if(DK.tab === 'dup'){ DK.dupGroups = []; DK.dupFreed = 0; dkRenderDup(); }
+      if(DK.tab === 'dup') dkStartDup(); /* 删完重新比对，避免显示过时的「没有重复」 */
     }).catch(function(e){
       closeModal();
       toast('删除失败：' + (e && e.message ? e.message : e), 'danger');
@@ -659,16 +693,29 @@ window.bindDisk = function(){
       toast(d.drive + ' 盘索引完成：' + (d.files || 0).toLocaleString() + ' 个文件', 'ok');
     });
     onGo('dup:progress', function(d){
+      if(DK.dupDiscard) return;
       DK.dupScanning = true; DK.dupPct = (d && d.pct) || 0;
       DK.dupStage = (d && d.stage === 'hashing') ? '哈希比对中' : '分组中';
-      var el = dkEl('spDupProg');
-      if(el) el.innerHTML = dkDupProgHtml();
-      else if(DK.tab === 'dup') dkRenderDup();
+      /* 只更新进度条内部，不整块重绘列表 —— 原来每帧 dkRenderDup() 会吞点击 */
+      var card = dkEl('spDupProgCard');
+      if(card){
+        var tx = card.querySelector('.sp-dup-prog > span');
+        var bar = card.querySelector('.sp-pct-bar > span');
+        if(tx) tx.textContent = DK.dupStage + ' ' + DK.dupPct + '%';
+        if(bar) bar.style.width = DK.dupPct + '%';
+      } else if(DK.tab === 'dup'){
+        dkRenderDup();
+      }
     });
     onGo('dup:done', function(d){
-      DK.dupScanning = false;
-      if(d && d.ok){ DK.dupGroups = d.groups || []; DK.dupFreed = d.freed || 0; }
-      else toast((d && d.err) || '重复文件扫描失败', 'warn');
+      if(DK.dupDiscard) return;   /* 换盘后旧比对晚到：直接丢弃，不张冠李戴 */
+      DK.dupScanning = false; DK.dupSearched = true;
+      if(d && d.ok){
+        DK.dupGroups = d.groups || []; DK.dupFreed = d.freed || 0; DK.dupErr = '';
+      } else {
+        DK.dupErr = (d && d.err) || '重复文件查找失败';
+        toast(DK.dupErr, 'warn');
+      }
       if(DK.tab === 'dup') dkRenderDup();
     });
   }
@@ -689,17 +736,9 @@ window.bindDisk = function(){
       dkOpenPath(dp.querySelector('[data-dup-open]').getAttribute('data-dup-open'));
       return;
     }
-    /* 高风险项解锁：只作用于本组，重绘会清掉已勾选状态（宁可让用户重新勾一遍） */
-    var ul = t.closest('[data-dup-unlock]');
-    if(ul){
-      var ugi = +ul.getAttribute('data-dup-unlock');
-      DK.dupUnlock[ugi] = !DK.dupUnlock[ugi];
-      dkRenderDup();
-      toast(DK.dupUnlock[ugi]
-        ? '已解锁本组高风险项：请逐项看清原因，删除时还需再次确认'
-        : '已重新锁定本组高风险项', DK.dupUnlock[ugi] ? 'warn' : 'ok');
-      return;
-    }
+    /* 空状态里的「开始查找 / 重新查找 / 重试」按钮 */
+    var dstart = t.closest('[data-dup-start]');
+    if(dstart){ dkStartDup(); return; }
     var ddel = t.closest('.sp-dup-del');
     if(ddel){
       var gi = +ddel.getAttribute('data-gi');
@@ -708,12 +747,12 @@ window.bindDisk = function(){
       var keep = (typeof g.keep === 'number' && g.keep >= 0 && g.keep < g.paths.length) ? g.keep : 0;
       var picked = [];
       dkEach('.sp-dupgroup[data-gi="' + gi + '"] input[data-dup-path]', function(c){
-        /* disabled 的一律不算：正本、禁删项、未解锁的高风险项都带 disabled */
+        /* disabled 的一律不算：正本与禁删项都带 disabled */
         if(c.checked && !c.disabled) picked.push(c.getAttribute('data-dup-path'));
       });
       picked = picked.filter(function(p){ return g.paths.indexOf(p) >= 0 && p !== g.paths[keep]; });
       if(!picked.length){
-        toast('请先勾选要删除的副本（标「保留·正本」的不可删；高风险项需先解锁）', 'warn');
+        toast('请先勾选要删除的副本（标「保留·正本」和「禁止删除」的都不可勾选）', 'warn');
         return;
       }
       dkConfirmDelete(picked, picked.length + ' 个重复副本（共 ' + fmtSize(g.size * picked.length)
@@ -772,18 +811,7 @@ window.bindDisk = function(){
     }
     if(t.closest('#spScan')){ dkStartScan(DK.drive); return; }
     if(t.closest('#spTopGo')){ dkLoadTop(); return; }
-    if(t.closest('#spDupGo')){
-      var sel = dkEl('spDupMin');
-      if(sel) DK.dupMin = +sel.value;
-      DK.dupScanning = true; DK.dupGroups = []; DK.dupFreed = 0; DK.dupUnlock = {};
-      dkRenderDup();
-      callGo('SpaceDupScanAsync', DK.dupMin).catch(function(ex){
-        DK.dupScanning = false;
-        toast('查找失败：' + (ex && ex.message ? ex.message : ex), 'warn');
-        dkRenderDup();
-      });
-      return;
-    }
+    if(t.closest('#spDupGo')){ dkStartDup(); return; }
   });
 
   /* 阈值下拉：改了就重新取（change 事件，不是 click） */

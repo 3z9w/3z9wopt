@@ -16,6 +16,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -188,7 +189,8 @@ func TestChooseKeepPrefersNewerVersion(t *testing.T) {
 	}
 }
 
-// 后端复核：block 永不删，high 默认拒、解锁后才放行。
+// 后端复核：block / high 一律拒绝。
+// 2026-11-02 用户决定：「不给删除的文件，就不要让用户解锁了，这样不安全」。
 // 前端的禁用勾选只是交互，绑定能被直接调用，闸门必须在后端。
 func TestSpaceDeleteRiskGate(t *testing.T) {
 	var a App
@@ -197,12 +199,8 @@ func TestSpaceDeleteRiskGate(t *testing.T) {
 	if len(res) != 1 || res[0].Ok || !strings.Contains(res[0].Err, "已阻止删除") {
 		t.Fatalf("系统文件必须被后端拒绝: %+v", res)
 	}
-	res2 := a.SpaceDeleteUnlocked([]string{blocked})
-	if len(res2) != 1 || res2[0].Ok {
-		t.Fatalf("block 即使解锁也不能删: %+v", res2)
-	}
 
-	// 造一个「看起来在程序组件目录」的真实文件，验证默认拒 / 解锁放行
+	// 造一个「看起来在程序组件目录」的真实文件，验证同样删不掉
 	dir := t.TempDir()
 	plug := filepath.Join(dir, `plugins`)
 	if err := os.MkdirAll(plug, 0o755); err != nil {
@@ -215,17 +213,83 @@ func TestSpaceDeleteRiskGate(t *testing.T) {
 	if r := riskOf(f); r.Level != riskHigh {
 		t.Fatalf("测试前提不成立：该文件应判 high，实际 %s", r.Level)
 	}
-	if r := a.SpaceDelete([]string{f}); r[0].Ok {
-		t.Fatal("默认档不该删掉 high 文件")
+	again := a.SpaceDelete([]string{f})
+	if again[0].Ok {
+		t.Fatal("high 文件不该被删掉")
+	}
+	if !strings.Contains(again[0].Err, "不提供解锁") {
+		t.Fatalf("拒绝原因要写明不提供解锁: %s", again[0].Err)
 	}
 	if _, err := os.Stat(f); err != nil {
-		t.Fatal("默认档拒绝后文件必须还在")
+		t.Fatal("拒绝后文件必须还在")
 	}
-	if r := a.SpaceDeleteUnlocked([]string{f}); !r[0].Ok {
-		t.Fatalf("解锁档应能删掉 high 文件: %s", r[0].Err)
+}
+
+// 钉死产品决策：App 上不允许再出现任何「解锁删除」绑定。
+// Wails 靠反射把方法暴露给前端，多一个方法就多一条绕过闸门的路。
+func TestNoUnlockBinding(t *testing.T) {
+	// App 的绑定方法都是指针接收者，反射必须用 *App 才看得到方法集
+	tp := reflect.TypeOf(&App{})
+	if _, ok := tp.MethodByName("SpaceDeleteUnlocked"); ok {
+		t.Fatal("不允许再提供 SpaceDeleteUnlocked：block / high 一律禁止删除，不给解锁")
 	}
-	if _, err := os.Stat(f); !os.IsNotExist(err) {
-		t.Fatal("解锁后文件应真的消失")
+	for _, n := range []string{"SpaceDelete", "SpaceAssess"} {
+		if _, ok := tp.MethodByName(n); !ok {
+			t.Fatalf("缺少必要的绑定 %s", n)
+		}
+	}
+}
+
+// 换台机器：不同的盘符、不同的用户名、不同的系统盘，静态规则照样生效。
+// 这一组专门防止有人把本机路径写死进判断链。
+func TestRiskWorksOnAnotherMachine(t *testing.T) {
+	for _, p := range []string{
+		`F:\Windows\System32\drivers\foo.sys`,  // 系统盘不在 C:
+		`E:\Users\ZhangSan\OneDrive\合同.pdf`,  // 别的用户名、别的盘
+		`Z:\Games\Foo\Content\Paks\chunk0.pak`, // 游戏装在 Z:
+		`D:\Program Files\Bar\bin\bar.dll`,
+	} {
+		if r := riskOf(p); !forbiddenLevel(r.Level) {
+			t.Fatalf("换机器后仍应禁止删除: %s 实际 %s（%s）", p, r.Level, r.Tags[0])
+		}
+	}
+	// 别人机器上的普通个人文件仍应可勾选，不能因为规则变宽就全锁死
+	wantLevel(t, `F:\Users\LiSi\Downloads\photo.jpg`, riskCaution)
+}
+
+// 动态采集：别的机器上装了清单里没有的软件、同步目录改了名字 / 挪了盘，
+// 仍然要被识别并锁住。这里注入 riskCtx 模拟「另一台机器」的采集结果。
+func TestRiskDynamicDirsFromAnotherMachine(t *testing.T) {
+	ctx := &riskCtx{
+		refs:        map[string]bool{},
+		installDirs: []string{`e:\my tools\foostudio\`, `d:\clash verge\`},
+		cloudDirs:   []string{`f:\我的同步盘\`},
+	}
+	if r := assessPath(`E:\My Tools\FooStudio\assets\data.dat`, ctx); r.Level != riskHigh || r.Tags[0] != "已安装软件" {
+		t.Fatalf("动态安装目录应锁住清单里没有的软件: %+v", r)
+	}
+	if r := assessPath(`F:\我的同步盘\合同.pdf`, ctx); r.Level != riskBlock || r.Tags[0] != "云同步" {
+		t.Fatalf("自定义名字 / 任意盘的云同步目录应禁止删除: %+v", r)
+	}
+	// 前缀必须按目录边界比，不能把「我的同步盘2」误伤成「我的同步盘」
+	if r := assessPath(`F:\我的同步盘2\合同.pdf`, ctx); r.Level == riskBlock {
+		t.Fatalf("相邻但不同的目录不该被前缀误伤: %+v", r)
+	}
+	// ctx=nil（测试 / 异常路径）不能 panic
+	_ = assessPath(`F:\随便\a.txt`, nil)
+}
+
+// ctxDir 规范化：注册表 / 环境变量给回来的脏数据都要能处理。
+func TestCtxDirNormalize(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`"D:\Clash Verge"`, `d:\clash verge\`},
+		{`C:\Program Files\Foo\foo.exe,0`, `c:\program files\foo\`},
+		{`D:\`, ``},
+	}
+	for _, c := range cases {
+		if got := ctxDir(expandCtxEnv(c.in)); got != c.want {
+			t.Fatalf("ctxDir(%q) = %q，期望 %q", c.in, got, c.want)
+		}
 	}
 }
 

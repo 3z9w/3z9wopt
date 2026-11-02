@@ -15,7 +15,7 @@ package main
 // libcef.dll 判成「重复」，还把路径字母序第一份当正本 —— 结果删掉的是正在用的
 // 新版。「内容相同」不等于「有一份多余」：程序组件、游戏资源、系统文件、
 // 云同步目录、密钥凭据、备份，都不能按留一份删其余处理。现在每组带逐路径
-// 风险等级与正本索引，前端默认锁死高风险项，后端删除前再复核一次。
+// 风险等级与正本索引，前端禁删项不可勾选，后端删除前再复核一次；一律不提供解锁。
 //
 // 2026-10-11：这一页从老版本（v2）**按功能 100% 移植** —— 重复文件判定
 // （同大小分组 → 抽样哈希 → 全量 MD5）、删除、定位的行为与参数一律照搬，
@@ -501,32 +501,20 @@ type SpaceDelResult struct {
 // 禁用时 shell 会直接返回非 0，于是就成了「0 项成功、1 项失败」。
 //
 // 2026-11-02 三次修复（用户反馈「内容重复 ≠ 有一份是多余的」）：
-// 删除前**后端自己复核**每个路径的可删除性，见 space_safety.go。前端的勾选框、
-// 禁用状态都只是交互，Wails 绑定可以被直接调用，所以真正的闸门必须放在这里。
-//   - SpaceDelete          默认档：block / high 一律拒绝
-//   - SpaceDeleteUnlocked  前端显式解锁后才用：放行 high，block 仍然永不删除
+// 删除前**后端自己复核**每个路径的可删除性，见 space_safety.go。
+//
+// 2026-11-02 四次修复（用户决定）：**取消一切解锁入口**。block 与 high 都是
+// 「不给删除的文件」，一律拒绝；不再提供任何解锁旁路绑定。
+// 用户原话：「不给删除的文件，就不要让用户解锁了，这样不安全」。
+// 前端的勾选框 / 禁用状态只是交互，Wails 绑定可以被直接调用，闸门必须在这里。
 func (a *App) SpaceDelete(paths []string) []SpaceDelResult {
-	return a.spaceDelete(paths, false)
-}
-
-// SpaceDeleteUnlocked 只在用户在列表里主动解锁「程序/游戏文件」后才允许调用。
-func (a *App) SpaceDeleteUnlocked(paths []string) []SpaceDelResult {
-	return a.spaceDelete(paths, true)
-}
-
-func (a *App) spaceDelete(paths []string, allowHigh bool) []SpaceDelResult {
 	out := []SpaceDelResult{}
 	ctx := currentRiskCtx()
 	for _, p := range paths {
 		r := assessPath(p, ctx)
-		switch {
-		case r.Level == riskBlock:
+		if forbiddenLevel(r.Level) {
 			out = append(out, SpaceDelResult{Path: p, Ok: false,
-				Err: "已阻止删除【" + r.Tags[0] + "】：" + r.Reason})
-			continue
-		case r.Level == riskHigh && !allowHigh:
-			out = append(out, SpaceDelResult{Path: p, Ok: false,
-				Err: "已阻止删除【" + r.Tags[0] + "】：" + r.Reason + "；如确认要删请先在列表中解锁"})
+				Err: "已阻止删除【" + r.Tags[0] + "】：" + r.Reason + "；此类文件一律禁止删除，不提供解锁"})
 			continue
 		}
 		err := spaceDeleteFile(p)

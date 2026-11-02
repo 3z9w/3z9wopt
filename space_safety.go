@@ -21,13 +21,21 @@ package main
 //
 //	block   永不删除：系统/引导/驱动、被系统保护或正被占用、密钥凭据、
 //	         云同步目录（删本地会反向删云端）、版本控制仓库元数据
-//	high    默认锁死，可显式解锁后删：程序目录与组件、游戏资源与存档、
-//	         浏览器/通讯软件用户数据、备份唯一副本、网络共享位置
+//	high    永不删除：程序目录与组件、游戏资源与存档、浏览器/通讯软件
+//	         用户数据、备份唯一副本、网络共享位置
 //	caution 可勾选，但醒目提示「不可恢复」：个人文档/媒体/压缩包、副本命名
 //	safe    可勾选：临时文件、缓存、日志、崩溃转储
 //
+// block 与 high **一律禁止删除，不提供任何解锁入口**（2026-11-02 用户决定：
+// 「不给删除的文件，就不要让用户解锁了，这样不安全」）。用户若仍要处理，
+// 可以用列表里的「在资源管理器中定位」自行操作，本软件不代劳。
+//
 // 特别处理用户强调的「影响下一次正常使用」：程序/游戏目录里的文件即使当前
 // **没有在运行**也照锁不误，不能因为「现在删得掉」就放行。
+//
+// 换机器也能用（2026-11-02 用户要求）：静态规则表只作兜底，**本机实际装了
+// 什么软件、同步目录在哪**都在运行时从注册表卸载项 / 环境变量动态采集，
+// 不写死盘符、用户名、系统盘，也不假设别人装了和我一样的软件。
 //
 // 复用了项目既有的两处能力，避免两套口径打架：
 //   - probeCanDelete()        junk_priv.go：DELETE 句柄实测，判据与真删一致
@@ -48,10 +56,16 @@ import (
 
 const (
 	riskBlock   = "block"   // 永不删除
-	riskHigh    = "high"    // 默认锁死，需显式解锁
+	riskHigh    = "high"    // 永不删除（曾允许解锁，2026-11-02 按用户要求取消）
 	riskCaution = "caution" // 可勾选，醒目提示
 	riskSafe    = "safe"    // 可勾选，自动生成/可重建
 )
+
+// forbiddenLevel 是否属于「一律禁止删除、不给解锁」的级别。
+// 前端禁用勾选只是交互，后端删除入口必须用这个判据再复核一次。
+func forbiddenLevel(level string) bool {
+	return level == riskBlock || level == riskHigh
+}
 
 // FileRisk 一条「这个文件能不能删」的结论，前端直接拿来渲染。
 type FileRisk struct {
@@ -307,7 +321,9 @@ func tempLikePath(norm string) bool {
 // ---------- 上下文：开机自启 / 系统服务引用的路径 ----------
 
 type riskCtx struct {
-	refs map[string]bool // 小写、规范化后的完整路径
+	refs        map[string]bool // 小写、规范化后的完整路径（开机自启 / 服务引用）
+	installDirs []string        // 本机实际安装的软件目录（注册表卸载项动态采集）
+	cloudDirs   []string        // 本机实际存在的云同步目录（环境变量 / 注册表动态采集）
 }
 
 var (
@@ -317,15 +333,183 @@ var (
 )
 
 // currentRiskCtx 注册表引用只查一次，60 秒内复用（服务状态会变，不做永久缓存）。
+// 采集的是**本机当前**的安装目录 / 云同步目录：换机器、换用户名、换系统盘、
+// 装了完全不同的软件，都会自动重新适配，不依赖任何硬编码清单。
 func currentRiskCtx() *riskCtx {
 	riskMu.Lock()
 	defer riskMu.Unlock()
 	if riskCache != nil && time.Since(riskAt) < 60*time.Second {
 		return riskCache
 	}
-	riskCache = &riskCtx{refs: loadRefPaths()}
+	riskCache = loadRiskContext()
 	riskAt = time.Now()
 	return riskCache
+}
+
+func loadRiskContext() *riskCtx {
+	c := &riskCtx{refs: loadRefPaths()}
+	c.installDirs = loadInstallDirs()
+	c.cloudDirs = loadCloudDirs()
+	return c
+}
+
+// underCtxDir 判断规范化后的文件路径是否落在某个候选目录下。
+func underCtxDir(normWithSlash string, dirs []string) bool {
+	for _, d := range dirs {
+		if strings.HasPrefix(normWithSlash, d) {
+			return true
+		}
+	}
+	return false
+}
+
+// ctxDir 把任意形式的目录路径规范化成「小写 + 反斜杠 + 结尾带 \」的前缀形式。
+// 返回 "" 表示不可用（根目录 / 用户主目录 / 非绝对路径），避免把整盘锁死。
+func ctxDir(raw string) string {
+	s := strings.TrimSpace(strings.Trim(raw, `"`))
+	if i := strings.IndexByte(s, ','); i >= 0 { // DisplayIcon 常带 ",0"
+		s = s[:i]
+	}
+	s = strings.TrimSpace(s)
+	// DisplayIcon 常是 "...\app.exe"；最后一段带点说明是文件名，取所在目录
+	if i := strings.LastIndexAny(s, `\/`); i >= 0 && strings.Contains(s[i+1:], ".") {
+		s = s[:i]
+	}
+	s = strings.ReplaceAll(s, `/`, `\`)
+	for len(s) > 3 && strings.HasSuffix(s, `\`) {
+		s = s[:len(s)-1]
+	}
+	if !filepath.IsAbs(s) || len(s) < 4 {
+		return ""
+	}
+	low := strings.ToLower(s)
+	rest := low
+	if len(low) >= 2 && low[1] == ':' {
+		rest = low[2:]
+	}
+	rest = strings.Trim(rest, `\`)
+	if rest == "" { // 盘根
+		return ""
+	}
+	home := strings.ToLower(strings.TrimRight(os.Getenv("USERPROFILE"), `\`))
+	if low == home { // 用户主目录本身，粒度太粗
+		return ""
+	}
+	if !strings.Contains(rest, `\`) { // 只有一级目录名：排除系统级粗粒度目录
+		switch rest {
+		case "users", "windows", "programdata", "program files", "program files (x86)":
+			return ""
+		}
+	}
+	return low + `\`
+}
+
+// expandCtxEnv 展开注册表值里常见的 %VAR%（os.ExpandEnv 在 Windows 上不认这种写法）。
+func expandCtxEnv(s string) string {
+	for _, v := range []string{
+		"ProgramFiles", "ProgramFiles(x86)", "SystemRoot", "SystemDrive",
+		"LOCALAPPDATA", "APPDATA", "USERPROFILE", "TEMP",
+	} {
+		s = strings.ReplaceAll(s, "%"+v+"%", os.Getenv(v))
+	}
+	return s
+}
+
+// loadInstallDirs 从「添加/删除程序」的卸载项里采集**本机实际安装**的软件目录。
+// 静态 knownAppDirs 只覆盖常见软件；别人机器上装的是别的东西、装在 D:\任意目录，
+// 靠这张运行时清单才认得出来。读不到就返回空，主判断链不依赖它。
+func loadInstallDirs() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(raw string) {
+		d := ctxDir(expandCtxEnv(raw))
+		if d == "" || seen[d] {
+			return
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	roots := []struct {
+		key  registry.Key
+		subs []string
+	}{
+		{registry.LOCAL_MACHINE, []string{
+			`Software\Microsoft\Windows\CurrentVersion\Uninstall`,
+			`Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall`}},
+		{registry.CURRENT_USER, []string{`Software\Microsoft\Windows\CurrentVersion\Uninstall`}},
+	}
+	for _, r := range roots {
+		for _, sub := range r.subs {
+			k, err := registry.OpenKey(r.key, sub, registry.ENUMERATE_SUB_KEYS)
+			if err != nil {
+				continue
+			}
+			if names, err := k.ReadSubKeyNames(2048); err == nil {
+				for _, n := range names {
+					sk, err := registry.OpenKey(k, n, registry.QUERY_VALUE)
+					if err != nil {
+						continue
+					}
+					for _, vn := range []string{"InstallLocation", "DisplayIcon"} {
+						if v, _, err := sk.GetStringValue(vn); err == nil && v != "" {
+							add(v)
+						}
+					}
+					sk.Close()
+				}
+			}
+			k.Close()
+		}
+	}
+	if len(out) > 400 {
+		out = out[:400]
+	}
+	return out
+}
+
+// loadCloudDirs 采集本机实际的云同步目录。用户可以把同步文件夹改名、挪到
+// 任意盘、用任意客户端，所以优先读客户端自己写的环境变量，再按常见默认名
+// 在当前用户目录下探一遍。删这里的文件会反向删云端，必须一律禁止。
+func loadCloudDirs() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	add := func(raw string) {
+		d := ctxDir(expandCtxEnv(raw))
+		if d == "" || seen[d] {
+			return
+		}
+		seen[d] = true
+		out = append(out, d)
+	}
+	for _, v := range []string{
+		"OneDrive", "OneDriveCommercial", "OneDriveConsumer", "OneDriveBusiness",
+		"Dropbox", "GOOGLE_DRIVE", "ICLOUDDRIVE", "Nutstore", "NUTSTORE",
+		"BaiduNetdisk", "BAIDUNETDISK", "Weiyun", "WEIYUN", "Seafile", "SEAFILE",
+		"SYNCTHING", "Nextcloud", "NEXTCLOUD",
+	} {
+		if p := os.Getenv(v); p != "" {
+			add(p)
+		}
+	}
+	if home := os.Getenv("USERPROFILE"); home != "" {
+		for _, n := range []string{
+			"OneDrive", "Dropbox", "Google Drive", "iCloudDrive",
+			"坚果云", "百度网盘", "腾讯微云", "Nextcloud", "Seafile", "Syncthing",
+		} {
+			p := filepath.Join(home, n)
+			if st, err := os.Stat(p); err == nil && st.IsDir() {
+				add(p)
+			}
+		}
+	}
+	if k, err := registry.OpenKey(registry.CURRENT_USER,
+		`Software\Microsoft\OneDrive`, registry.QUERY_VALUE); err == nil {
+		if v, _, err := k.GetStringValue("UserFolder"); err == nil && v != "" {
+			add(v)
+		}
+		k.Close()
+	}
+	return out
 }
 
 // loadRefPaths 收集「删了下次开机就少个东西」的引用路径：
@@ -444,7 +628,7 @@ func assessPath(path string, ctx *riskCtx) FileRisk {
 	}
 	if strings.HasPrefix(raw, `\\`) {
 		return newRisk(raw, riskHigh, "网络位置",
-			"网络共享 / UNC 位置：删除会影响其他人和本机脱机缓存，默认锁定", false)
+			"网络共享 / UNC 位置：删除会影响其他人和本机脱机缓存，一律禁止删除", false)
 	}
 
 	// L1 系统 / 引导 / 驱动
@@ -455,6 +639,12 @@ func assessPath(path string, ctx *riskCtx) FileRisk {
 	if r := firstRule(blockDataRules, seg, base, ext); r != nil {
 		return fromRule(raw, r, false)
 	}
+	// 动态层：本机实际配置的云同步目录（用户可能改过名字、挪到任意盘，
+	// 静态清单拦不住，必须按这台机器的真实情况判定）
+	if ctx != nil && underCtxDir(norm+`\`, ctx.cloudDirs) {
+		return newRisk(raw, riskBlock, "云同步",
+			"本机检测到的云同步目录：删除本地文件会被同步成「删除云端副本」，可能连云端一起丢，一律禁止删除", false)
+	}
 
 	// L6 例外：真缓存 / 临时文件（组件型扩展名不降级）
 	if !componentExts[ext] {
@@ -463,22 +653,35 @@ func assessPath(path string, ctx *riskCtx) FileRisk {
 		}
 	}
 
-	// 动态层：项目既有的运行时硬保护 + 服务/启动项引用 + 实测占用
-	if isProtectedRuntimePath(raw) {
-		return newRisk(raw, riskBlock, "运行时组件",
-			".NET / 驱动仓库等运行时组件区：不是缓存，删了不会自动重建，依赖它的程序会静默崩溃", false)
+	// 动态层：项目既有的运行时硬保护 + 服务/启动项引用 + 实测占用。
+	// 只在路径确实存在时探测：盘符不存在 / 文件已失效时 CreateFile 会返回
+	// ACCESS_DENIED，会被误读成「系统保护」，既给出错误原因，也让「换台机器」
+	// 的静态规则判定失真。纯路径类规则（安装目录）不受影响，放在后面。
+	if _, err := os.Lstat(raw); err == nil {
+		if isProtectedRuntimePath(raw) {
+			return newRisk(raw, riskBlock, "运行时组件",
+				".NET / 驱动仓库等运行时组件区：不是缓存，删了不会自动重建，依赖它的程序会静默崩溃", false)
+		}
+		if ctx != nil && ctx.refs[norm] {
+			return newRisk(raw, riskBlock, "开机自启",
+				"系统服务或开机启动项正在引用这个程序：删除后下次开机该服务/软件将无法启动", true)
+		}
+		switch probeCanDelete(raw) {
+		case "locked":
+			return newRisk(raw, riskBlock, "正在使用",
+				"文件正被程序占用（运行的程序、已加载的 DLL 或服务）：删除会失败，且强删可能让软件崩溃。关闭相关程序后刷新可重试", true)
+		case "denied":
+			return newRisk(raw, riskBlock, "系统保护",
+				"受系统保护（TrustedInstaller 等）：当前权限删不掉，也不应绕过保护强删", false)
+		}
 	}
-	if ctx != nil && ctx.refs[norm] {
-		return newRisk(raw, riskBlock, "开机自启",
-			"系统服务或开机启动项正在引用这个程序：删除后下次开机该服务/软件将无法启动", true)
-	}
-	switch probeCanDelete(raw) {
-	case "locked":
-		return newRisk(raw, riskBlock, "正在使用",
-			"文件正被程序占用（运行的程序、已加载的 DLL 或服务）：删除会失败，且强删可能让软件崩溃。关闭相关程序后刷新可重试", true)
-	case "denied":
-		return newRisk(raw, riskBlock, "系统保护",
-			"受系统保护（TrustedInstaller 等）：当前权限删不掉，也不应绕过保护强删", false)
+
+	// 动态层：本机注册表卸载项里登记的**实际安装目录**（纯路径判定，
+	// 不依赖文件是否存在）。这是「换台机器也能用」的关键 —— 别人的软件
+	// 装在 D:\随便什么名字的目录，静态 knownAppDirs 里没有，这里照样认得出来。
+	if ctx != nil && underCtxDir(norm+`\`, ctx.installDirs) {
+		return newRisk(raw, riskHigh, "已安装软件",
+			"本机已安装软件的目录（从系统卸载信息自动识别）：由软件自身管理，删除后下次启动可能报错或需要重装，一律禁止删除", false)
 	}
 
 	// L3 程序 / 运行时 / 组件

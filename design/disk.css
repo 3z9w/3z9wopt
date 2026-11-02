@@ -209,8 +209,8 @@ html[data-motion="off"] .sp-scan-ring{animation:none}
 /* ── 9.1 可删除性判断链：风险徽标 / 锁定行 / 弹窗风险清单 ───────────────── */
 .sp-tag.t-yel{background:rgba(96,165,250,.14);color:var(--info)}
 .sp-dupg-note{
-  font-size:11px;font-weight:650;color:var(--warn);white-space:nowrap;
-  padding:2px 8px;border-radius:6px;background:rgba(251,191,36,.13);
+  font-size:11px;font-weight:650;color:var(--danger);white-space:nowrap;
+  padding:2px 8px;border-radius:6px;background:rgba(248,113,113,.13);
 }
 .sp-duppath.locked{cursor:not-allowed;opacity:.72}
 .sp-duppath.locked .p{color:var(--tx3)}
@@ -228,12 +228,6 @@ html[data-motion="off"] .sp-scan-ring{animation:none}
   text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;
 }
 .sp-risk-more{font-size:11px;color:var(--tx3);padding:4px 0 2px}
-.sp-risk-ack{
-  display:flex;align-items:center;gap:8px;margin:8px 2px 2px;
-  font-size:12.5px;color:var(--tx2);cursor:pointer;
-}
-.sp-risk-ack input{width:15px;height:15px;accent-color:var(--danger)}
-
 @media(max-width:1180px){
   .sp-cols{grid-template-columns:minmax(0,2fr) minmax(0,1fr) 104px 80px 78px}
   .sp-row .tm{display:none}

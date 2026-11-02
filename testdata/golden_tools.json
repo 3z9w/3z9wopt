@@ -1670,7 +1670,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ],
@@ -1680,7 +1680,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ],
@@ -1690,7 +1690,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ],
@@ -1700,7 +1700,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ],
@@ -1710,7 +1710,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ],
@@ -1720,7 +1720,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ],
@@ -1730,7 +1730,7 @@
           "args": [
             "/batteryreport",
             "/output",
-            "C:\\Users\\Administrator\\AppData\\Local\\3z9wOpt\\reports\\battery-report.html"
+            "%LOCALAPPDATA%\\3z9wOpt\\reports\\battery-report.html"
           ]
         }
       ]

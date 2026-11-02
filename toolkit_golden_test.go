@@ -10,10 +10,38 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
 const goldenPath = "testdata/golden_tools.json"
+
+// maskGoldenEnv 把本机用户名 / 盘符从基线里抹掉。
+// 原来快照直接写死了 C:\Users\Administrator\...，换台机器跑测试必然红；
+// 现在统一换成环境变量占位符，基线在任何机器上都一致。
+func maskGoldenEnv(s string) string {
+	for _, kv := range [][2]string{
+		{"LOCALAPPDATA", os.Getenv("LOCALAPPDATA")},
+		{"APPDATA", os.Getenv("APPDATA")},
+		{"USERPROFILE", os.Getenv("USERPROFILE")},
+		{"TEMP", os.Getenv("TEMP")},
+		{"TMP", os.Getenv("TMP")},
+	} {
+		if kv[1] == "" {
+			continue
+		}
+		s = strings.ReplaceAll(s, kv[1], "%"+kv[0]+"%")
+		s = strings.ReplaceAll(s, strings.ToLower(kv[1]), "%"+kv[0]+"%")
+	}
+	// 兜底：CI / 服务账户 / 精简会话里可能根本没有 LOCALAPPDATA，
+	// batteryReportPath() 会退化成相对路径 3z9wOpt\reports\...。
+	// 统一补回占位符，让基线在任何机器、任何会话下都一致。
+	rel := "3z9wOpt" + string(os.PathSeparator) + "reports" + string(os.PathSeparator)
+	if strings.HasPrefix(s, rel) {
+		s = `%LOCALAPPDATA%` + string(os.PathSeparator) + s
+	}
+	return s
+}
 
 // 采样参数：覆盖空参数、端口、盘符、域名等各分支
 var goldenArgs = []string{"", "8080", "D:", "C:", "www.baidu.com", "s:60", "taskmgr"}
@@ -55,7 +83,17 @@ func dumpGolden() []goldenTool {
 			}
 			steps := make([]goldenStep, 0, len(plan))
 			for _, s := range plan {
-				steps = append(steps, goldenStep{Title: s.title, Exe: s.exe, Args: s.args, Stdin: s.stdin, Silent: s.silent})
+				var args []string
+				if len(s.args) > 0 {
+					args = make([]string, len(s.args))
+					for i := range s.args {
+						args[i] = maskGoldenEnv(s.args[i])
+					}
+				}
+				steps = append(steps, goldenStep{
+					Title: maskGoldenEnv(s.title), Exe: maskGoldenEnv(s.exe),
+					Args: args, Stdin: maskGoldenEnv(s.stdin), Silent: maskGoldenEnv(s.silent),
+				})
 			}
 			g.Steps[a] = steps
 		}
