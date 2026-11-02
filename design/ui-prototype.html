@@ -3598,6 +3598,11 @@ function callTimeoutFor(nm){
      用户点一下就判超时、后端算完的结果没人接 —— 表现就是"点了没反应"（2026-10-14）。
      给 60 秒；正常情况命中扫描完的预热缓存，是秒回的。 */
   if(/^(JunkWhoLocks|KillLockers)$/.test(n)) return 60000;
+  /* 磁盘空间页：Space* 全是实打实的磁盘 IO，一律给 20 分钟兜底（2026-11-02 用户反馈：
+     Win11/Win10 删重复文件都报「调用超时：main.App.SpaceDelete」—— 重复文件动辄 1~2GB、
+     逐个 SHFileOperation 进回收站，15 秒默认闸必超；且超时后后端还在删，用户看到
+     "删除失败"其实删了一半。超时只是上限，秒回的调用不受影响。 */
+  if(/^Space/.test(n)) return 20 * 60 * 1000;
   return /^(Clean|Scan|Run|Apply|Export|Optimize)/.test(n) ? 20 * 60 * 1000 : 15000;
 }
 function wailsRawCall(name, args, ms){

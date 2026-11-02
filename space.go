@@ -24,10 +24,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf16"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -483,18 +485,69 @@ func (a *App) SpaceDelete(paths []string) []SpaceDelResult {
 }
 
 // recycleDelete SHFileOperation 进回收站（FOF_ALLOWUNDO：误删可还原）
+//
+// 2026-11-02 修（用户反馈「重复文件删不掉，最后报调用超时」）：
+// 原来这行写的是 windows.StringToUTF16Ptr(path + "\x00")。
+// x/sys/windows 的 UTF16FromString 会把内嵌的 NUL 判成非法输入并 panic
+// （"windows: string with NUL passed to StringToUTF16"）。panic 在 Wails 的
+// dispatcher 里被 recover 成 error，但那条给前端的回调是空的 —— 前端拿不到
+// callbackID，Promise 永远悬着，15 秒后判「调用超时」。也就是：
+// **SHFileOperation 一次都没被调用过**，任何文件（100MB 的单文件也一样）
+// 都删不掉，报错信息还全指向"超时"这个假象。
+// 正确做法：用 utf16 自己编码，按 shell 要求的「双 NUL 结尾列表」构造。
+// 实测（100MB 文件，D 盘进回收站）：修复前必 panic；修复后 0.06s 完成，返回 0。
 func recycleDelete(path string) error {
-	src := windows.StringToUTF16Ptr(path + "\x00")
+	src := pathListUTF16([]string{path})
 	op := &shFileOp{
 		wFunc:  3, // FO_DELETE
 		pFrom:  uintptr(unsafe.Pointer(src)),
 		fFlags: 0x0040 | 0x0010 | 0x0004 | 0x0400, // ALLOWUNDO | NOCONFIRMATION | SILENT | NOERRORUI
 	}
 	h, _, _ := shOpProc.Call(uintptr(unsafe.Pointer(op)))
+	// pFrom 存的是 uintptr，GC 看不见这个引用；src 必须在调用期间保活，
+	// 否则极端情况下（本函数极短）缓冲区可能被回收成悬空指针。
+	runtime.KeepAlive(src)
 	if h != 0 {
-		return fmt.Errorf("删除失败（错误码 0x%x）", h)
+		return fmt.Errorf("%s（错误码 0x%x）", shDelErrText(h), h)
 	}
 	return nil
+}
+
+// pathListUTF16 构造 SHFileOperationW 要求的 UTF-16 双 NUL 结尾列表缓冲区。
+// ⚠️ 千万别改成 windows.StringToUTF16Ptr(p + "\x00") —— 那条路会 panic，见上。
+// 多路径时同样适用（一次 shell 调用删一批，比逐个调用少一层会话开销）。
+func pathListUTF16(paths []string) *uint16 {
+	var buf []uint16
+	for _, p := range paths {
+		buf = append(buf, utf16.Encode([]rune(p))...)
+		buf = append(buf, 0) // 每个路径以 \0 结尾
+	}
+	buf = append(buf, 0) // 整张列表再补一个 \0（双 NUL 结尾）
+	return &buf[0]
+}
+
+// shDelErrText 把 SHFileOperation 的错误码翻成人话 —— 以前只显示 0x20 这种
+// 十六进制，用户和反馈渠道都看不懂，白丢一次排查线索。
+func shDelErrText(h uintptr) string {
+	switch h {
+	case 0x20:
+		return "删除失败：文件被占用或没有权限"
+	case 0x21:
+		return "删除失败：路径层级太深"
+	case 0x71:
+		return "删除失败：源和目标指向同一个文件"
+	case 0x74:
+		return "删除失败：不能删除根目录"
+	case 0x78:
+		return "删除失败：文件名太长"
+	case 0x7C:
+		return "删除失败：路径无效"
+	case 0x7D:
+		return "删除失败：路径无效"
+	case 0x402:
+		return "删除失败：未知错误"
+	}
+	return "删除失败"
 }
 
 type shFileOp struct {
