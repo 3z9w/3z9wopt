@@ -181,9 +181,15 @@ function dkRenderStats(){
     ['重复文件组', st.dupGroups ? st.dupGroups + ' 组' : '待分析', st.dupGroups ? '点「重复文件」查看' : ''],
     ['重复可释放', st.dupFree ? fmtSize(st.dupFree) : '待分析', st.dupFree ? '同一份文件存了多份' : '']
   ];
+  /* 四张卡统一渲染第二行（没有说明的用 &nbsp; 占位）：否则只有两张有第二行，
+     grid stretch 会把另两张的第一行垂直居中，四张卡的标题就不在同一水平线上。
+     title 兜底：极窄窗口里文字被 ellipsis 截断时，悬停仍能看到全文。 */
   host.innerHTML = cards.map(function(c){
-    return '<div class="sp-card"><div class="l">' + c[0] + '</div><div class="v">' + c[1] + '</div>'
-      + (c[2] ? '<div class="s">' + c[2] + '</div>' : '') + '</div>';
+    return '<div class="sp-card">'
+      + '<div class="l" title="' + dkEsc(c[0]) + '">' + dkEsc(c[0]) + '</div>'
+      + '<div class="v">' + dkEsc(c[1]) + '</div>'
+      + '<div class="s" title="' + dkEsc(c[2]) + '">'
+      +   (c[2] ? dkEsc(c[2]) : '&nbsp;') + '</div></div>';
   }).join('');
 }
 

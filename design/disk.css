@@ -50,27 +50,32 @@
 .sp-drive-sub{flex:0 0 auto;font-size:10.5px;color:var(--tx3);white-space:nowrap;font-variant-numeric:tabular-nums}
 
 /* ── 2 概览四卡 ───────────────────────────────────────────────────────── */
-/* 用户要求「概览四卡要比盘符卡还矮」：改成两列网格 —— 标题与数值同行（数值靠右），
-   说明放第二行跨两列；固定 height:42px，明确比盘符卡的 52px 矮一档。
-   四张卡在同一 grid 行里 stretch 等高，不会出现高低不齐。 */
+/* 2026-11-02 修正（用户：概览卡有字被截断，换到第二行的说明整行看不见）：
+   上一版用固定 height:42px + overflow:hidden 硬裁，字体 / DPI 稍大时第二行
+   说明会被整行切掉；align-content:center 在内容溢出时还会把第一行上下各切一半。
+   这里改成「不裁切 + 明确行高」：去掉固定 height 和 overflow:hidden，改用
+   min-height:40px，给三处文字写死 px 行高（18 + 14 + padding 6 + border 2
+   = 40px），内容完整显示且仍明显矮于盘符卡的 52px。四张卡在同一 grid 行里
+   stretch 等高，JS 侧四张统一渲染第二行（空说明占位），内部对齐完全一致。
+   .l / .s 保留 ellipsis 只为极窄窗口兜底，JS 已加 title，悬停可看全文。 */
 .sp-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:8px;margin-bottom:8px}
 .sp-card{
-  height:42px;padding:4px 10px;border-radius:var(--r2);overflow:hidden;
+  min-height:40px;padding:3px 10px;border-radius:var(--r2);
   display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto;
   align-content:center;gap:0 8px;
   background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
   border:1px solid var(--stroke);
 }
 .sp-card .l{
-  grid-column:1;grid-row:1;font-size:10.5px;color:var(--tx3);
+  grid-column:1;grid-row:1;font-size:10.5px;line-height:15px;color:var(--tx3);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .sp-card .v{
-  grid-column:2;grid-row:1;font-size:15px;font-weight:680;letter-spacing:-.02em;
-  font-variant-numeric:tabular-nums;white-space:nowrap;
+  grid-column:2;grid-row:1;font-size:15px;line-height:18px;font-weight:680;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;white-space:nowrap;
 }
 .sp-card .s{
-  grid-column:1 / -1;grid-row:2;font-size:10px;color:var(--tx3);margin-top:1px;
+  grid-column:1 / -1;grid-row:2;font-size:10.5px;line-height:14px;color:var(--tx3);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 
