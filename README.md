@@ -8,6 +8,8 @@
 
 [下载](https://opt.3z9w.com) · [官网](https://www.3z9w.com) · [更新记录](更新记录.md) · [Gitee 镜像](https://gitee.com/opt3z9w/3z9wopt) · [English](README.en.md)
 
+已收录于阮一峰《科技爱好者周刊》[第 417 期](https://www.ruanyifeng.com/blog/2026/10/weekly-issue-417.html)
+
 Windows 10 及以上系统通用 · GPLv3 开源授权 · 15 MB 单文件，解压即用
 
 ---

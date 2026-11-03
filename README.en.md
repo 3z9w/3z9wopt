@@ -13,6 +13,8 @@ A portable Windows cleaner and optimizer in a single 15 MB executable. Clear jun
 
 [Download](https://opt.3z9w.com) · [Website](https://www.3z9w.com) · [Changelog](更新记录.md) · [Gitee mirror](https://gitee.com/opt3z9w/3z9wopt)
 
+Featured in [Ruanyifeng's Weekly, issue 417](https://www.ruanyifeng.com/blog/2026/10/weekly-issue-417.html) — a long-running Chinese tech newsletter.
+
 Windows 10 and 11 · GPLv3 · 15 MB single executable
 
 ---
