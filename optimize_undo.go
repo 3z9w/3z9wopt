@@ -21,15 +21,24 @@ package main
 //   regdelete Value != "" → 单个注册表值
 //   regdelete Value == "" → 整键递归快照（值 + 子键）
 //   service               → 服务 Start 与 DelayedAutoStart
-//   cmd                   → 无法通用快照；沿用静态 Restore 里对应的 cmd 作为补偿/还原
+//   cmd                   → 不保存命令文本；还原时只从内置 optCatalog 取可信命令
 //   shellnotify           → 无状态，记 noop
+//
+// 安全边界（2026-11-09 补）：
+//   快照放在管理员专用目录，但读取时仍按不可信输入处理：
+//     · ID、动作类型、注册表路径、服务名、动作数量必须与内置 optCatalog 匹配；
+//     · cmd 还原命令只从 optCatalog 取，绝不执行文件里的字符串；
+//     · 注册表数据、服务启动类型、整键树都做类型/大小/范围校验。
+//   未通过校验的快照一律拒绝执行，不删除文件，便于用户手动排查。
 // ============================================================================
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,11 +47,14 @@ import (
 	"time"
 	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
 const (
-	optUndoVersion      = 1
+	// 2：移除快照里的命令文本，改为从内置 optCatalog 解析。
+	// 旧版 1 的文件含 cmd 字段，会因 DisallowUnknownFields 被拒绝。
+	optUndoVersion      = 2
 	optUndoMaxValueSize = 16 << 20 // 单个注册表值上限 16 MB，防止异常值撑爆日志
 	optUndoMaxTreeNodes = 4096     // 整键快照最多 4096 个值/子键
 	optUndoMaxTreeDepth = 16
@@ -75,10 +87,6 @@ type optUndoStep struct {
 
 	// service
 	Svc *optUndoService `json:"svc,omitempty"`
-
-	// cmd：原命令（仅用于报错文案）与静态 Restore 里对应的还原命令
-	Orig string      `json:"orig,omitempty"`
-	Cmd  *optUndoCmd `json:"cmd,omitempty"`
 }
 
 type optUndoTree struct {
@@ -106,11 +114,6 @@ type optUndoService struct {
 	Delayed    uint32 `json:"delayed"`
 }
 
-type optUndoCmd struct {
-	Cmd     string `json:"cmd"`
-	Skiperr string `json:"skiperr,omitempty"`
-}
-
 type optUndoFile struct {
 	Version int             `json:"version"`
 	Items   []*optUndoEntry `json:"items"`
@@ -120,21 +123,13 @@ type optUndoFile struct {
 
 // captureOptUndo 记录一个优化项全部 Optimize 动作的操作前状态。
 func captureOptUndo(it *OptItem) (*optUndoEntry, error) {
-	return captureOptUndoActs(it.ID, it.Name, it.Optimize, it.Restore)
+	return captureOptUndoActs(it.ID, it.Name, it.Optimize)
 }
 
 // captureOptUndoActs 记录 acts 的操作前状态。
-// cmdSource 用来给 cmd 动作找静态还原命令；补偿旧版静态还原时传 nil。
-func captureOptUndoActs(id, name string, acts, cmdSource []OptAction) (*optUndoEntry, error) {
+// 快照不保存任何命令文本：cmd 的还原命令在还原时从内置 optCatalog 取。
+func captureOptUndoActs(id, name string, acts []OptAction) (*optUndoEntry, error) {
 	e := &optUndoEntry{ID: id, Name: name, At: time.Now().Format("2006-01-02 15:04:05")}
-
-	var cmdRestores []optUndoCmd
-	for _, r := range cmdSource {
-		if r.Kind == "cmd" {
-			cmdRestores = append(cmdRestores, optUndoCmd{Cmd: r.Cmd, Skiperr: r.Skiperr})
-		}
-	}
-	cmdIdx := 0
 
 	for _, a := range acts {
 		step := optUndoStep{Kind: a.Kind}
@@ -172,12 +167,7 @@ func captureOptUndoActs(id, name string, acts, cmdSource []OptAction) (*optUndoE
 			step.Kind, step.Svc = "service", svc
 
 		case "cmd":
-			step.Kind, step.Orig = "cmd", a.Cmd
-			if cmdIdx < len(cmdRestores) {
-				c := cmdRestores[cmdIdx]
-				step.Cmd = &c
-			}
-			cmdIdx++
+			step.Kind = "cmd"
 
 		case "shellnotify":
 			step.Kind = "noop"
@@ -191,29 +181,143 @@ func captureOptUndoActs(id, name string, acts, cmdSource []OptAction) (*optUndoE
 }
 
 // ---------- 快照持久化 ----------
+//
+// 快照不能放在 %LOCALAPPDATA%：那是当前用户可写的目录，普通权限进程可以
+// 篡改里面的数据，再借管理员权限的程序把篡改结果写回系统。
+// 这里改放 %ProgramData%\3z9wOpt，并在每个读写入口把目录/文件的 DACL 收紧为
+// SYSTEM + Administrators 完全控制，其它用户不可读写。
 
-var optUndoMu sync.Mutex
+const (
+	optUndoFileName    = "optundo.json"
+	optUndoMaxFileSize = 16 << 20 // 超过 16 MB 直接拒绝，防止超大 JSON 拖垮提权进程
+	optUndoMaxItems    = 512
+	optUndoDirSDDL     = `D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`
+	optUndoFileSDDL    = `D:P(A;;FA;;;SY)(A;;FA;;;BA)`
+)
 
-func optUndoPath() string {
-	d := appDataDir()
-	_ = os.MkdirAll(d, 0o755)
-	return filepath.Join(d, "optundo.json")
+var (
+	optUndoMu sync.Mutex
+
+	// optUndoPathOverride 只给测试用：单测没有管理员权限，不能把临时目录
+	// 的 DACL 改成仅管理员可访问。生产路径永远走 ProgramData + ACL。
+	optUndoPathOverride string
+)
+
+func optUndoDir() (string, error) {
+	base := os.Getenv("ProgramData")
+	if base == "" {
+		if d := os.Getenv("SystemDrive"); d != "" {
+			base = filepath.Join(d+string(os.PathSeparator), "ProgramData")
+		}
+	}
+	if base == "" {
+		return "", fmt.Errorf("无法定位 ProgramData 目录")
+	}
+	return filepath.Join(base, "3z9wOpt"), nil
+}
+
+func optUndoPath() (string, error) {
+	if optUndoPathOverride != "" {
+		return optUndoPathOverride, nil
+	}
+	d, err := optUndoDir()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		return "", fmt.Errorf("创建快照目录失败：%w", err)
+	}
+	if err := hardenOptUndoDir(d); err != nil {
+		return "", fmt.Errorf("收紧快照目录权限失败：%w", err)
+	}
+	return filepath.Join(d, optUndoFileName), nil
+}
+
+func hardenOptUndoDir(dir string) error {
+	if err := rejectReparsePoint(dir); err != nil {
+		return err
+	}
+	return setNamedDACL(dir, optUndoDirSDDL)
+}
+
+func hardenOptUndoFile(path string) error {
+	if err := rejectReparsePoint(path); err != nil {
+		return err
+	}
+	return setNamedDACL(path, optUndoFileSDDL)
+}
+
+// rejectReparsePoint 拒绝符号链接/目录联接，避免用户预置一个链接把
+// 管理员写入重定向到别处。
+func rejectReparsePoint(path string) error {
+	attrs, err := windows.GetFileAttributes(windows.StringToUTF16Ptr(path))
+	if err != nil {
+		return err
+	}
+	if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return fmt.Errorf("%s 是重解析点，拒绝使用", path)
+	}
+	return nil
+}
+
+func setNamedDACL(path, sddl string) error {
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil)
 }
 
 func loadOptUndoFile() (*optUndoFile, error) {
-	b, err := os.ReadFile(optUndoPath())
+	p, err := optUndoPath()
+	if err != nil {
+		return nil, err
+	}
+	if optUndoPathOverride == "" {
+		if fi, err := os.Stat(p); err == nil {
+			if fi.IsDir() {
+				return nil, fmt.Errorf("快照路径是目录：%s", p)
+			}
+			if fi.Size() > optUndoMaxFileSize {
+				return nil, fmt.Errorf("操作前快照文件过大（%d 字节）", fi.Size())
+			}
+			if err := hardenOptUndoFile(p); err != nil {
+				return nil, fmt.Errorf("收紧快照文件权限失败：%w", err)
+			}
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+	}
+	b, err := os.ReadFile(p)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &optUndoFile{Version: optUndoVersion}, nil
 		}
 		return nil, err
 	}
+	if len(b) > optUndoMaxFileSize {
+		return nil, fmt.Errorf("操作前快照文件过大（%d 字节）", len(b))
+	}
 	var f optUndoFile
-	if err := json.Unmarshal(b, &f); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields() // 文件按不可信输入处理，不认识的字段直接拒绝
+	if err := dec.Decode(&f); err != nil {
 		return nil, err
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		return nil, fmt.Errorf("操作前快照文件含多余内容")
 	}
 	if f.Version > optUndoVersion {
 		return nil, fmt.Errorf("操作前快照版本过新（%d）", f.Version)
+	}
+	if len(f.Items) > optUndoMaxItems {
+		return nil, fmt.Errorf("操作前快照条目过多（%d）", len(f.Items))
 	}
 	return &f, nil
 }
@@ -226,17 +330,49 @@ func writeOptUndoFile(f *optUndoFile) error {
 	if err != nil {
 		return err
 	}
-	p := optUndoPath()
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+	if len(b) > optUndoMaxFileSize {
+		return fmt.Errorf("操作前快照超过 %d 字节，拒绝写入", optUndoMaxFileSize)
+	}
+	p, err := optUndoPath()
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	// O_EXCL + 随机文件名：不跟随预置的符号链接，也不与其它实例抢同一个临时文件。
+	fh, err := os.CreateTemp(filepath.Dir(p), "optundo-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := fh.Name()
+	defer os.Remove(tmp)
+	if _, err := fh.Write(b); err != nil {
+		fh.Close()
+		return err
+	}
+	if err := fh.Close(); err != nil {
+		return err
+	}
+	if optUndoPathOverride == "" {
+		// 临时文件与最终文件同目录；目录已经收紧，子文件会继承保护 DACL。
+		// 这里再显式收紧一次，避免文件系统关闭继承时留下可写文件。
+		if err := hardenOptUndoFile(tmp); err != nil {
+			return fmt.Errorf("收紧快照文件权限失败：%w", err)
+		}
+		if _, err := os.Lstat(p); err == nil {
+			if err := rejectReparsePoint(p); err != nil {
+				return err
+			}
+		}
+	}
+	if err := os.Rename(tmp, p); err != nil {
+		return err
+	}
+	return nil
 }
 
 // saveOptUndoIfAbsent 只在没有旧快照时写入。
 // 返回 added=true 表示这次确实新增了一条，失败补偿成功后要把它删掉。
-func saveOptUndoIfAbsent(e *optUndoEntry) (added bool, err error) {
+// 已有旧快照必须先与内置目录对齐：旧快照坏了就拒绝应用，避免产生无法撤销的改动。
+func saveOptUndoIfAbsent(it *OptItem, e *optUndoEntry) (added bool, err error) {
 	optUndoMu.Lock()
 	defer optUndoMu.Unlock()
 
@@ -246,6 +382,9 @@ func saveOptUndoIfAbsent(e *optUndoEntry) (added bool, err error) {
 	}
 	for _, x := range f.Items {
 		if x.ID == e.ID {
+			if err := validateOptUndoEntry(x, it); err != nil {
+				return false, fmt.Errorf("已有操作前快照校验失败：%w", err)
+			}
 			return false, nil
 		}
 	}
@@ -287,6 +426,185 @@ func deleteOptUndo(id string) error {
 	return writeOptUndoFile(f)
 }
 
+// ---------- 不可信快照校验 ----------
+
+// optUndoCmdRestore 返回 cmd 动作对应的静态还原命令。
+// 命令只从传入的 OptItem（内存里的 optCatalog）取，绝不读快照文件。
+func optUndoCmdRestore(it *OptItem, index int) (OptAction, bool) {
+	if it == nil || index < 0 || index >= len(it.Optimize) || it.Optimize[index].Kind != "cmd" {
+		return OptAction{}, false
+	}
+	// 第 index 条优化动作是第几个 cmd 动作？
+	cmdIdx := 0
+	for i := 0; i < index; i++ {
+		if it.Optimize[i].Kind == "cmd" {
+			cmdIdx++
+		}
+	}
+	// 按顺序取静态 Restore 里第 cmdIdx 条 cmd。
+	seen := 0
+	for _, r := range it.Restore {
+		if r.Kind != "cmd" {
+			continue
+		}
+		if seen == cmdIdx {
+			return r, true
+		}
+		seen++
+	}
+	return OptAction{}, false
+}
+
+// validateOptUndoEntry 把快照和内置目录逐条对齐。
+// 只接受「动作数量、动作类型、注册表路径、值名、服务名」全部匹配的快照。
+func validateOptUndoEntry(e *optUndoEntry, it *OptItem) error {
+	if it == nil {
+		return fmt.Errorf("内置目录里找不到这个优化项")
+	}
+	if e == nil || e.ID != it.ID {
+		return fmt.Errorf("优化项 ID 不匹配")
+	}
+	if len(e.Steps) != len(it.Optimize) {
+		return fmt.Errorf("动作数量不匹配：快照 %d 条，目录 %d 条", len(e.Steps), len(it.Optimize))
+	}
+	for i, step := range e.Steps {
+		act := it.Optimize[i]
+		switch act.Kind {
+		case "regwrite":
+			if step.Kind != "regvalue" || !sameTrustedName(step.Key, act.Key) || !sameTrustedName(step.Value, act.Value) {
+				return fmt.Errorf("第 %d 条注册表动作与目录不匹配", i+1)
+			}
+			if err := validateUndoValue(step.RegExists, step.RegType, step.RegData); err != nil {
+				return fmt.Errorf("第 %d 条注册表数据非法：%w", i+1, err)
+			}
+		case "regdelete":
+			if act.Value == "" {
+				if step.Kind != "regkey" || !sameTrustedName(step.Key, act.Key) {
+					return fmt.Errorf("第 %d 条删除整键动作与目录不匹配", i+1)
+				}
+				if !step.KeyExisted && step.KeyTree != nil {
+					return fmt.Errorf("第 %d 条删除整键快照自相矛盾", i+1)
+				}
+				if step.KeyExisted && step.KeyTree == nil {
+					return fmt.Errorf("第 %d 条删除整键快照缺少键内容", i+1)
+				}
+				total := 0
+				if err := validateUndoTree(step.KeyTree, 0, &total); err != nil {
+					return fmt.Errorf("第 %d 条整键快照非法：%w", i+1, err)
+				}
+			} else {
+				if step.Kind != "regvalue" || !sameTrustedName(step.Key, act.Key) || !sameTrustedName(step.Value, act.Value) {
+					return fmt.Errorf("第 %d 条删除值动作与目录不匹配", i+1)
+				}
+				if err := validateUndoValue(step.RegExists, step.RegType, step.RegData); err != nil {
+					return fmt.Errorf("第 %d 条注册表数据非法：%w", i+1, err)
+				}
+			}
+		case "service":
+			if step.Kind != "service" || step.Svc == nil || !sameTrustedName(step.Svc.Name, act.Name) {
+				return fmt.Errorf("第 %d 条服务动作与目录不匹配", i+1)
+			}
+			if step.Svc.HasStart && step.Svc.Start > 4 {
+				return fmt.Errorf("第 %d 条服务启动类型非法：%d", i+1, step.Svc.Start)
+			}
+			if step.Svc.HasDelayed && step.Svc.Delayed > 1 {
+				return fmt.Errorf("第 %d 条服务延迟启动值非法：%d", i+1, step.Svc.Delayed)
+			}
+			if !step.Svc.Existed && (step.Svc.HasStart || step.Svc.HasDelayed) {
+				return fmt.Errorf("第 %d 条服务快照自相矛盾", i+1)
+			}
+			if step.Svc.Existed && !step.Svc.HasStart {
+				return fmt.Errorf("第 %d 条服务快照缺少 Start", i+1)
+			}
+		case "cmd":
+			if step.Kind != "cmd" {
+				return fmt.Errorf("第 %d 条命令动作与目录不匹配", i+1)
+			}
+		case "shellnotify":
+			if step.Kind != "noop" {
+				return fmt.Errorf("第 %d 条外壳刷新动作与目录不匹配", i+1)
+			}
+		default:
+			return fmt.Errorf("第 %d 条动作类型未知：%s", i+1, act.Kind)
+		}
+	}
+	return nil
+}
+
+func sameTrustedName(a, b string) bool {
+	// 必须完全相等，不能 TrimSpace，也不能忽略大小写：
+	// 校验后写回用的就是 step 里的字符串，任何「看起来相等」的宽松比较
+	// 都可能让校验路径和实际写入路径不一致。快照由本程序生成，原样保存
+	// 目录里的字符串，所以严格比较不会误伤。
+	return a == b
+}
+
+func validateUndoValue(exists bool, typ uint32, data []byte) error {
+	if !exists {
+		if typ != 0 || len(data) != 0 {
+			return fmt.Errorf("不存在的值不应带类型或数据")
+		}
+		return nil
+	}
+	if len(data) > optUndoMaxValueSize {
+		return fmt.Errorf("数据过大：%d 字节", len(data))
+	}
+	switch typ {
+	case registry.NONE:
+		if len(data) != 0 {
+			return fmt.Errorf("REG_NONE 数据必须为空")
+		}
+	case registry.DWORD:
+		if len(data) != 4 {
+			return fmt.Errorf("REG_DWORD 数据长度必须为 4")
+		}
+	case registry.QWORD:
+		if len(data) != 8 {
+			return fmt.Errorf("REG_QWORD 数据长度必须为 8")
+		}
+	case registry.SZ, registry.EXPAND_SZ, registry.BINARY, registry.MULTI_SZ:
+		// 大小已在上面限制。资源列表 / REG_LINK 等少见类型不接受：
+		// 优化项目标都是普通用户设置，收紧类型可以少一条攻击面。
+	default:
+		return fmt.Errorf("不支持的注册表类型：%d", typ)
+	}
+	return nil
+}
+
+func validateUndoTree(tree *optUndoTree, depth int, total *int) error {
+	if tree == nil {
+		return nil
+	}
+	if depth > optUndoMaxTreeDepth {
+		return fmt.Errorf("层级过深（>%d）", optUndoMaxTreeDepth)
+	}
+	for _, v := range tree.Values {
+		*total = *total + 1
+		if *total > optUndoMaxTreeNodes {
+			return fmt.Errorf("节点超过 %d 个", optUndoMaxTreeNodes)
+		}
+		if strings.ContainsRune(v.Name, 0) || len(v.Name) > 16383 {
+			return fmt.Errorf("值名非法")
+		}
+		if err := validateUndoValue(true, v.Type, v.Data); err != nil {
+			return fmt.Errorf("值 %q 非法：%w", v.Name, err)
+		}
+	}
+	for _, sc := range tree.Subkeys {
+		*total = *total + 1
+		if *total > optUndoMaxTreeNodes {
+			return fmt.Errorf("节点超过 %d 个", optUndoMaxTreeNodes)
+		}
+		if sc.Name == "" || strings.ContainsAny(sc.Name, "\\\x00") || len(sc.Name) > 255 {
+			return fmt.Errorf("子键名非法")
+		}
+		if err := validateUndoTree(sc.Tree, depth+1, total); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ---------- 应用 / 还原骨架 ----------
 
 // applyOptItem 拍快照 → 执行 → 失败时按快照逆序补偿。
@@ -302,7 +620,13 @@ func applyOptItem(ctx context.Context, it *OptItem) OptResult {
 		res.OK, res.Err = false, "记录操作前状态失败，未做任何修改："+err.Error()
 		return res
 	}
-	added, err := saveOptUndoIfAbsent(snap)
+	// 先自检：如果拍下来的快照将来过不了校验，就不要动系统。
+	// 宁可这一项不做，也不能留下一个还原不了的改动。
+	if err := validateOptUndoEntry(snap, it); err != nil {
+		res.OK, res.Err = false, "操作前状态无法安全记录，未做任何修改："+err.Error()
+		return res
+	}
+	added, err := saveOptUndoIfAbsent(it, snap)
 	if err != nil {
 		res.OK, res.Err = false, "记录操作前状态失败，未做任何修改："+err.Error()
 		return res
@@ -316,7 +640,7 @@ func applyOptItem(ctx context.Context, it *OptItem) OptResult {
 	// 失败位置的动作也可能改了一半（例如服务 Start 改完、延迟启动没写成功），
 	// 所以从 last 开始一起回退；若在动作开始前就停了，last=-1，无需补偿。
 	if last >= 0 {
-		if cerrs := compensateOptUndo(snap.Steps, last); len(cerrs) > 0 {
+		if cerrs := compensateOptUndo(snap.Steps, it, last); len(cerrs) > 0 {
 			res.OK, res.Err = false, runErr.Error()+"；自动回退失败："+strings.Join(cerrs, "；")+"（可点还原重试）"
 			return res
 		}
@@ -342,6 +666,12 @@ func restoreOptItem(ctx context.Context, it *OptItem) OptResult {
 	if !ok {
 		return restoreOptItemStatic(ctx, it)
 	}
+	// 快照文件按不可信输入处理：先逐条对齐内置目录，再执行任何动作。
+	if err := validateOptUndoEntry(entry, it); err != nil {
+		res.OK, res.Err = false, "操作前快照校验失败，已拒绝执行："+err.Error()
+		return res
+	}
+	entry.Name = it.Name
 
 	var errs, warns []string
 	stopped := false
@@ -352,18 +682,18 @@ func restoreOptItem(ctx context.Context, it *OptItem) OptResult {
 			stopped = true
 			break
 		}
-		if entry.Steps[i].Kind == "cmd" && entry.Steps[i].Cmd != nil {
+		if _, ok := optUndoCmdRestore(it, i); ok {
 			usedCmd = true
 		}
-		err := restoreUndoStep(entry.Steps[i])
+		err := restoreUndoStep(entry.Steps[i], it, i)
 		if errors.Is(err, errOptNoUndoCmd) {
 			// 例如「net stop SmsRouter」源数据没有配对应的 net start。
 			// 状态类改动（注册表/服务启动类型）已经还原，这条命令只能如实提示。
-			warns = append(warns, undoStepLabel(entry.Steps[i])+"没有定义还原命令")
+			warns = append(warns, undoStepLabel(entry.Steps[i], it, i)+"没有定义还原命令")
 			continue
 		}
 		if err != nil {
-			errs = append(errs, undoStepLabel(entry.Steps[i])+"："+err.Error())
+			errs = append(errs, undoStepLabel(entry.Steps[i], it, i)+"："+err.Error())
 		}
 	}
 	if stopped {
@@ -396,7 +726,7 @@ func restoreOptItemStatic(ctx context.Context, it *OptItem) OptResult {
 		return res
 	}
 
-	snap, err := captureOptUndoActs(it.ID, it.Name, it.Restore, nil)
+	snap, err := captureOptUndoActs(it.ID, it.Name, it.Restore)
 	if err != nil {
 		res.OK, res.Err = false, "记录还原前状态失败，未做任何修改："+err.Error()
 		return res
@@ -407,7 +737,8 @@ func restoreOptItemStatic(ctx context.Context, it *OptItem) OptResult {
 		return res
 	}
 	if last >= 0 {
-		if cerrs := compensateOptUndo(snap.Steps, last); len(cerrs) > 0 {
+		// 静态还原的补偿没有可信的「反向命令」来源，cmd 步骤会明确报错。
+		if cerrs := compensateOptUndo(snap.Steps, nil, last); len(cerrs) > 0 {
 			res.OK, res.Err = false, runErr.Error()+"；自动回退失败："+strings.Join(cerrs, "；")
 			return res
 		}
@@ -433,14 +764,15 @@ func execOptActs(ctx context.Context, acts []OptAction) (last int, err error) {
 }
 
 // compensateOptUndo 从 last 开始逆序回退，返回无法回退的明细。
-func compensateOptUndo(steps []optUndoStep, last int) []string {
+// it 必须是内存里的内置目录项；cmd 反向命令只从它解析。
+func compensateOptUndo(steps []optUndoStep, it *OptItem, last int) []string {
 	if last >= len(steps) {
 		last = len(steps) - 1
 	}
 	var errs []string
 	for i := last; i >= 0; i-- {
-		if err := restoreUndoStep(steps[i]); err != nil {
-			errs = append(errs, undoStepLabel(steps[i])+"："+err.Error())
+		if err := restoreUndoStep(steps[i], it, i); err != nil {
+			errs = append(errs, undoStepLabel(steps[i], it, i)+"："+err.Error())
 		}
 	}
 	return errs
@@ -451,8 +783,9 @@ func compensateOptUndo(steps []optUndoStep, last int) []string {
 var errOptNoUndoCmd = errors.New("没有定义还原命令")
 
 // restoreUndoStep 按快照回写一条动作。
+// cmd 的还原命令只从 it（内置目录）取，绝不执行快照文件里的字符串。
 // cmd 用 context.Background()：用户点「停止」也不能把已经改掉的东西留在半路。
-func restoreUndoStep(step optUndoStep) error {
+func restoreUndoStep(step optUndoStep, it *OptItem, index int) error {
 	switch step.Kind {
 	case "noop":
 		return nil
@@ -463,15 +796,16 @@ func restoreUndoStep(step optUndoStep) error {
 	case "service":
 		return restoreServiceUndo(step.Svc)
 	case "cmd":
-		if step.Cmd == nil || strings.TrimSpace(step.Cmd.Cmd) == "" {
+		act, ok := optUndoCmdRestore(it, index)
+		if !ok {
 			return errOptNoUndoCmd
 		}
-		return execOptAction(context.Background(), OptAction{Kind: "cmd", Cmd: step.Cmd.Cmd, Skiperr: step.Cmd.Skiperr})
+		return execOptAction(context.Background(), act)
 	}
 	return fmt.Errorf("未知快照动作: %s", step.Kind)
 }
 
-func undoStepLabel(step optUndoStep) string {
+func undoStepLabel(step optUndoStep, it *OptItem, index int) string {
 	switch step.Kind {
 	case "regvalue":
 		name := step.Value
@@ -487,8 +821,8 @@ func undoStepLabel(step optUndoStep) string {
 		}
 		return "服务"
 	case "cmd":
-		if step.Orig != "" {
-			return "命令 " + shortCmd(step.Orig)
+		if it != nil && index >= 0 && index < len(it.Optimize) && it.Optimize[index].Kind == "cmd" {
+			return "命令 " + shortCmd(it.Optimize[index].Cmd)
 		}
 		return "命令"
 	case "noop":
