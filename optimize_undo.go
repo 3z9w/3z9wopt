@@ -1143,7 +1143,11 @@ func captureRegKeyState(keyPath string) (existed bool, ancestor string, err erro
 	if err != registry.ErrNotExist {
 		return false, "", err
 	}
-	rootName := keyPath[:strings.Index(keyPath, `\`)]
+	i := strings.Index(keyPath, `\`)
+	if i < 0 {
+		return false, "", fmt.Errorf("非法注册表路径: %s", keyPath)
+	}
+	rootName := keyPath[:i]
 	parts := strings.Split(sub, `\`)
 	for i := len(parts) - 1; i >= 0; i-- {
 		cand := strings.Join(parts[:i], `\`)
