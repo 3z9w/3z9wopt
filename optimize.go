@@ -52,11 +52,12 @@ type OptItemStatus struct {
 }
 
 type OptResult struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	OK   bool   `json:"ok"`
-	Err  string `json:"err"`
-	Warn string `json:"warn,omitempty"` // 非致命提示：例如旧版本项没有操作前快照，只能恢复默认值
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	OK       bool   `json:"ok"`
+	Err      string `json:"err"`
+	Warn     string `json:"warn,omitempty"`     // 非致命提示：例如旧版本项没有操作前快照，只能恢复默认值
+	Rollback string `json:"rollback,omitempty"` // not_needed / succeeded / failed：失败后自动回退的真实结果
 }
 
 // ---------- 注册表路径解析 ----------
@@ -315,21 +316,9 @@ func execRegDelete(a OptAction) error {
 		}
 		return nil
 	}
-	// Value 为空 = 删整个键：在父键上 DeleteKey(叶子名)
-	i := strings.LastIndex(sub, `\`)
-	if i < 0 {
-		return fmt.Errorf("无法定位父键: %s", a.Key)
-	}
-	parent, leaf := sub[:i], sub[i+1:]
-	k, err := registry.OpenKey(root, parent, registry.SET_VALUE|registry.ENUMERATE_SUB_KEYS)
-	if err != nil {
-		if err == registry.ErrNotExist {
-			return nil
-		}
-		return err
-	}
-	defer k.Close()
-	if err := registry.DeleteKey(k, leaf); err != nil && err != registry.ErrNotExist {
+	// Value 为空 = 删整个键（含子键）。用递归删除，和快照的回滚能力保持一致；
+	// registry.DeleteKey 只能删空键，遇到子键会失败。
+	if err := deleteRegKeyTree(root, sub); err != nil && err != registry.ErrNotExist {
 		return err
 	}
 	return nil

@@ -4,6 +4,7 @@ package main
 // 只碰 HKCU\Software\3z9wOptV2Test 临时键；快照文件写到 t.TempDir()，不碰用户真实记录。
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -17,9 +18,13 @@ import (
 func useTempOptUndo(t *testing.T) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "optundo.json")
-	old := optUndoPathOverride
+	oldPath, oldKey := optUndoPathOverride, optUndoHmacKeyForTest
 	optUndoPathOverride = p
-	t.Cleanup(func() { optUndoPathOverride = old })
+	optUndoHmacKeyForTest = []byte("0123456789abcdef0123456789abcdef")
+	t.Cleanup(func() {
+		optUndoPathOverride = oldPath
+		optUndoHmacKeyForTest = oldKey
+	})
 }
 
 func cleanupOptTestKeys() {
@@ -131,12 +136,17 @@ func TestOptUndoRestoresAbsentValue(t *testing.T) {
 	if _, ok := testReadDword(t, key, "UndoAbsent"); ok {
 		t.Fatal("还原后值应重新变为不存在")
 	}
+	if _, err := registry.OpenKey(registry.CURRENT_USER, optTestKey, registry.QUERY_VALUE); err != registry.ErrNotExist {
+		t.Fatalf("还原后本次创建的空键应被删除，err=%v", err)
+	}
 }
 
-// regdelete Value 为空 = 删整键：快照必须能连子键和值一起重建。
-// 注意：execRegDelete 走 RegDeleteKey，带子键的键删不掉（源目录里的空值删除项
-// 都是无子键的占位键）。这里直接验证「快照 → 删除 → 还原」这条链路。
+// regdelete Value 为空 = 删整键：走真实 applyOptItem → execRegDelete → restoreOptItem。
+// 同时验证：优化后其它程序新写入的值在还原时不会被删掉。
 func TestOptUndoRestoresDeletedKeyTree(t *testing.T) {
+	if !isElevated() {
+		t.Skip("整键还原会写回安全描述符，需要管理员权限")
+	}
 	useTempOptUndo(t)
 	cleanupOptTestKeys()
 	defer cleanupOptTestKeys()
@@ -166,29 +176,34 @@ func TestOptUndoRestoresDeletedKeyTree(t *testing.T) {
 		ID: "undo-keytree", Name: "undo keytree",
 		Optimize: []OptAction{{Kind: "regdelete", Key: key, Value: ""}},
 	}
-	snap, err := captureOptUndo(it)
+	if res := applyOptItem(context.Background(), it); !res.OK {
+		t.Fatalf("应用失败：%s", res.Err)
+	}
+	if _, err := registry.OpenKey(registry.CURRENT_USER, parent, registry.QUERY_VALUE); err != registry.ErrNotExist {
+		t.Fatalf("应用后整键应被删除，err=%v", err)
+	}
+	// 模拟优化之后其它程序又写入了新数据。
+	k, _, err = registry.CreateKey(registry.CURRENT_USER, parent, registry.SET_VALUE)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOptUndoEntry(snap, it); err != nil {
-		t.Fatalf("整键快照应通过校验：%v", err)
-	}
-	if err := deleteRegKeyTree(registry.CURRENT_USER, parent); err != nil {
+	if err := k.SetDWordValue("NewAfterApply", 9); err != nil {
+		k.Close()
 		t.Fatal(err)
 	}
-	if _, err := registry.OpenKey(registry.CURRENT_USER, parent, registry.QUERY_VALUE); err != registry.ErrNotExist {
-		t.Fatalf("删除后整键应不存在，err=%v", err)
-	}
-	for i := len(snap.Steps) - 1; i >= 0; i-- {
-		if err := restoreUndoStep(snap.Steps[i], it, i); err != nil {
-			t.Fatalf("还原失败：%v", err)
-		}
+	k.Close()
+
+	if res := restoreOptItem(context.Background(), it); !res.OK {
+		t.Fatalf("还原失败：%s", res.Err)
 	}
 	if v, ok := testReadDword(t, key, "A"); !ok || v != 7 {
 		t.Fatalf("子键值 A 应恢复为 7，实际 %d exists=%v", v, ok)
 	}
 	if v, ok := testReadString(t, key+`\Child`, "B"); !ok || v != "hi" {
 		t.Fatalf("孙键值 B 应恢复为 hi，实际 %q exists=%v", v, ok)
+	}
+	if v, ok := testReadDword(t, key, "NewAfterApply"); !ok || v != 9 {
+		t.Fatalf("优化后新写入的值不应被还原删除，实际 %d exists=%v", v, ok)
 	}
 }
 
@@ -291,6 +306,7 @@ func TestOptUndoJournalRoundTrip(t *testing.T) {
 		Steps: []optUndoStep{{
 			Kind: "regvalue", Key: `HKEY_CURRENT_USER\Software\X`, Value: "Y",
 			RegExists: true, RegType: uint32(registry.DWORD), RegData: []byte{1, 0, 0, 0},
+			KeyExisted: true,
 		}},
 	}
 	added, err := saveOptUndoIfAbsent(it, e)
@@ -378,6 +394,71 @@ func TestOptUndoRejectsUnknownJSONField(t *testing.T) {
 	}
 	if _, err := loadOptUndoFile(); err == nil {
 		t.Fatal("含未知字段的快照必须拒绝加载")
+	}
+}
+
+// 安全回归：文件内容被改动但 HMAC 没重算时，必须拒绝加载。
+func TestOptUndoRejectsTamperedHMAC(t *testing.T) {
+	useTempOptUndo(t)
+	p, err := optUndoPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := &optUndoEntry{
+		ID: "hmac-1", Name: "hmac",
+		Steps: []optUndoStep{{Kind: "cmd"}},
+	}
+	if err := writeOptUndoFile(&optUndoFile{Version: optUndoVersion, Items: []*optUndoEntry{e}}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tampered := bytes.Replace(b, []byte(`"name": "hmac"`), []byte(`"name": "evil"`), 1)
+	if bytes.Equal(b, tampered) {
+		t.Fatal("测试没有改到文件内容")
+	}
+	if err := os.WriteFile(p, tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadOptUndoFile(); err == nil {
+		t.Fatal("HMAC 不匹配时必须拒绝加载")
+	}
+}
+
+func TestOptUndoCmdCoveredByService(t *testing.T) {
+	it := &OptItem{Optimize: []OptAction{
+		{Kind: "service", Name: "hpet", Start: "4"},
+		{Kind: "cmd", Cmd: "net stop hpet"},
+	}}
+	if !optUndoCmdCoveredByService(it, 1) {
+		t.Fatal("同一项里已有 hpet 服务快照时，net stop hpet 应被覆盖")
+	}
+	if optUndoCmdCoveredByService(it, 0) {
+		t.Fatal("服务动作本身不应被判为被覆盖")
+	}
+	other := &OptItem{Optimize: []OptAction{{Kind: "cmd", Cmd: "net stop other"}}}
+	if optUndoCmdCoveredByService(other, 0) {
+		t.Fatal("没有对应服务快照的 net stop 不应被跳过")
+	}
+}
+
+func TestOptUndoRejectsBadServiceRunningState(t *testing.T) {
+	it := &OptItem{
+		ID: "svc-run", Name: "svc run",
+		Optimize: []OptAction{{Kind: "service", Name: "hpet", Start: "4"}},
+	}
+	e := &optUndoEntry{ID: it.ID, Steps: []optUndoStep{{
+		Kind: "service",
+		Svc:  &optUndoService{Name: "hpet", Existed: true, HasStart: true, Start: 4, Running: true},
+	}}}
+	if err := validateOptUndoEntry(e, it); err == nil {
+		t.Fatal("RunningKnown=false 却带 Running=true 必须拒绝")
+	}
+	e.Steps[0].Svc.RunningKnown = true
+	if err := validateOptUndoEntry(e, it); err != nil {
+		t.Fatalf("合法的运行状态快照不应被拒绝：%v", err)
 	}
 }
 

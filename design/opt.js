@@ -369,11 +369,19 @@ function optAskApply(){
     OPT_BUSY = { done: 0, total: ids.length, name: '准备中…' };
     if(cur === 'optimize') render();
     callGo('ApplyOptimize', ids).then(function(res){
-      var ok = (res || []).filter(function(r){ return r.ok; }).length;
-      var bad = (res || []).filter(function(r){ return !r.ok; });
+      var list = res || [];
+      var ok = list.filter(function(r){ return r.ok; }).length;
+      var bad = list.filter(function(r){ return !r.ok; });
+      var rbOK = list.filter(function(r){ return r.rollback === 'succeeded'; }).length;
+      var rbFail = list.filter(function(r){ return r.rollback === 'failed'; }).length;
+      var tail = '';
+      if (bad.length) {
+        tail = '，失败 ' + bad.length + ' 项';
+        if (rbOK) tail += '，已自动回退 ' + rbOK + ' 项';
+        if (rbFail) tail += '，' + rbFail + ' 项回退失败（请点该项还原重试）';
+      }
       OPT_BUSY = null; OPT_SEL = {};
-      toast('已应用 ' + ok + ' / ' + ids.length + ' 项' + (bad.length ? ('，失败 ' + bad.length + ' 项（已自动回退失败项的改动）') : ''),
-            bad.length ? 'warn' : 'ok');
+      toast('已应用 ' + ok + ' / ' + ids.length + ' 项' + tail, bad.length ? 'warn' : 'ok');
       loadOptCatalog();
     }).catch(function(e){
       OPT_BUSY = null;

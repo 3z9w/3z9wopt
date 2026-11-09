@@ -35,6 +35,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,6 +62,8 @@ const (
 	optUndoMaxValueSize = 16 << 20 // 单个注册表值上限 16 MB，防止异常值撑爆日志
 	optUndoMaxTreeNodes = 4096     // 整键快照最多 4096 个值/子键
 	optUndoMaxTreeDepth = 16
+	optUndoMaxSDDLLen   = 64 << 10
+	regReadControl      = 0x00020000 // READ_CONTROL，用于读取键的安全描述符
 )
 
 // optUndoEntry 一个优化项的操作前快照。
@@ -80,16 +86,20 @@ type optUndoStep struct {
 	RegExists bool   `json:"regExists"`
 	RegType   uint32 `json:"regType"`
 	RegData   []byte `json:"regData,omitempty"`
+	// 目标键在应用前是否存在。
+	// regvalue 且键不存在时记录最深的已存在祖先，还原时只清理本次创建且仍为空的键。
+	KeyExisted       bool   `json:"keyExisted"`
+	ExistingAncestor string `json:"existingAncestor,omitempty"`
 
 	// regkey（regdelete 且 Value 为空）
-	KeyExisted bool         `json:"keyExisted"`
-	KeyTree    *optUndoTree `json:"keyTree,omitempty"`
+	KeyTree *optUndoTree `json:"keyTree,omitempty"`
 
 	// service
 	Svc *optUndoService `json:"svc,omitempty"`
 }
 
 type optUndoTree struct {
+	SDDL    string             `json:"sddl,omitempty"` // 该键原安全描述符，还原时一并写回
 	Values  []optUndoTreeValue `json:"values,omitempty"`
 	Subkeys []optUndoTreeKey   `json:"subkeys,omitempty"`
 }
@@ -106,17 +116,20 @@ type optUndoTreeKey struct {
 }
 
 type optUndoService struct {
-	Name       string `json:"name"`
-	Existed    bool   `json:"existed"`
-	HasStart   bool   `json:"hasStart"`
-	Start      uint32 `json:"start"`
-	HasDelayed bool   `json:"hasDelayed"`
-	Delayed    uint32 `json:"delayed"`
+	Name         string `json:"name"`
+	Existed      bool   `json:"existed"`
+	HasStart     bool   `json:"hasStart"`
+	Start        uint32 `json:"start"`
+	HasDelayed   bool   `json:"hasDelayed"`
+	Delayed      uint32 `json:"delayed"`
+	RunningKnown bool   `json:"runningKnown"`
+	Running      bool   `json:"running"`
 }
 
 type optUndoFile struct {
 	Version int             `json:"version"`
 	Items   []*optUndoEntry `json:"items"`
+	HMAC    string          `json:"hmac,omitempty"` // HMAC-SHA256(Items)，密钥在 HKLM 受保护区域
 }
 
 // ---------- 快照采集 ----------
@@ -139,8 +152,13 @@ func captureOptUndoActs(id, name string, acts []OptAction) (*optUndoEntry, error
 			if err != nil {
 				return nil, fmt.Errorf("读取 %s 的原值失败：%w", a.Key, err)
 			}
+			keyExisted, ancestor, err := captureRegKeyState(a.Key)
+			if err != nil {
+				return nil, fmt.Errorf("读取 %s 的键状态失败：%w", a.Key, err)
+			}
 			step.Kind, step.Key, step.Value = "regvalue", a.Key, a.Value
 			step.RegExists, step.RegType, step.RegData = exists, typ, data
+			step.KeyExisted, step.ExistingAncestor = keyExisted, ancestor
 
 		case "regdelete":
 			if a.Value == "" {
@@ -155,8 +173,13 @@ func captureOptUndoActs(id, name string, acts []OptAction) (*optUndoEntry, error
 				if err != nil {
 					return nil, fmt.Errorf("读取 %s 的原值失败：%w", a.Key, err)
 				}
+				keyExisted, ancestor, err := captureRegKeyState(a.Key)
+				if err != nil {
+					return nil, fmt.Errorf("读取 %s 的键状态失败：%w", a.Key, err)
+				}
 				step.Kind, step.Key, step.Value = "regvalue", a.Key, a.Value
 				step.RegExists, step.RegType, step.RegData = exists, typ, data
+				step.KeyExisted, step.ExistingAncestor = keyExisted, ancestor
 			}
 
 		case "service":
@@ -184,34 +207,45 @@ func captureOptUndoActs(id, name string, acts []OptAction) (*optUndoEntry, error
 //
 // 快照不能放在 %LOCALAPPDATA%：那是当前用户可写的目录，普通权限进程可以
 // 篡改里面的数据，再借管理员权限的程序把篡改结果写回系统。
-// 这里改放 %ProgramData%\3z9wOpt，并在每个读写入口把目录/文件的 DACL 收紧为
-// SYSTEM + Administrators 完全控制，其它用户不可读写。
+// 这里改放 ProgramData，并在创建时直接带上安全描述符，同时用 HKLM 里的
+// 密钥做 HMAC 完整性校验。目录/文件的所有者必须是 Administrators 或 SYSTEM。
 
 const (
 	optUndoFileName    = "optundo.json"
 	optUndoMaxFileSize = 16 << 20 // 超过 16 MB 直接拒绝，防止超大 JSON 拖垮提权进程
 	optUndoMaxItems    = 512
-	optUndoDirSDDL     = `D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`
-	optUndoFileSDDL    = `D:P(A;;FA;;;SY)(A;;FA;;;BA)`
+	optUndoDirSDDL     = `O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`
+	optUndoFileSDDL    = `O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)`
+	optUndoKeySDDL     = `O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)`
+	optUndoHmacKeyRel  = `SOFTWARE\3z9wOpt`
+	optUndoHmacKeyVal  = "UndoHmacKey"
 )
 
 var (
 	optUndoMu sync.Mutex
 
-	// optUndoPathOverride 只给测试用：单测没有管理员权限，不能把临时目录
-	// 的 DACL 改成仅管理员可访问。生产路径永远走 ProgramData + ACL。
-	optUndoPathOverride string
+	// 测试钩子：单测没有管理员权限，不能改 ProgramData / HKLM 的 ACL。
+	// 生产路径永远走 Known Folder + 安全描述符 + HKLM 密钥。
+	optUndoPathOverride   string
+	optUndoHmacKeyForTest []byte
+
+	optUndoDirOnce      sync.Once
+	optUndoDirCached    string
+	optUndoDirCachedErr error
+
+	optUndoKeyOnce  sync.Once
+	optUndoKeyBytes []byte
+	optUndoKeyErr   error
 )
 
 func optUndoDir() (string, error) {
-	base := os.Getenv("ProgramData")
-	if base == "" {
-		if d := os.Getenv("SystemDrive"); d != "" {
-			base = filepath.Join(d+string(os.PathSeparator), "ProgramData")
-		}
+	// 不信任 ProgramData 环境变量：普通用户可以覆盖它。
+	base, err := windows.KnownFolderPath(windows.FOLDERID_ProgramData, 0)
+	if err != nil {
+		return "", fmt.Errorf("无法获取 ProgramData 真实路径：%w", err)
 	}
-	if base == "" {
-		return "", fmt.Errorf("无法定位 ProgramData 目录")
+	if strings.TrimSpace(base) == "" {
+		return "", fmt.Errorf("ProgramData 真实路径为空")
 	}
 	return filepath.Join(base, "3z9wOpt"), nil
 }
@@ -220,31 +254,114 @@ func optUndoPath() (string, error) {
 	if optUndoPathOverride != "" {
 		return optUndoPathOverride, nil
 	}
-	d, err := optUndoDir()
+	d, err := ensureOptUndoDir()
 	if err != nil {
 		return "", err
-	}
-	if err := os.MkdirAll(d, 0o755); err != nil {
-		return "", fmt.Errorf("创建快照目录失败：%w", err)
-	}
-	if err := hardenOptUndoDir(d); err != nil {
-		return "", fmt.Errorf("收紧快照目录权限失败：%w", err)
 	}
 	return filepath.Join(d, optUndoFileName), nil
 }
 
-func hardenOptUndoDir(dir string) error {
-	if err := rejectReparsePoint(dir); err != nil {
-		return err
+func ensureOptUndoDir() (string, error) {
+	optUndoDirOnce.Do(func() {
+		optUndoDirCached, optUndoDirCachedErr = ensureOptUndoDirOnce()
+	})
+	return optUndoDirCached, optUndoDirCachedErr
+}
+
+func ensureOptUndoDirOnce() (string, error) {
+	d, err := optUndoDir()
+	if err != nil {
+		return "", err
 	}
-	return setNamedDACL(dir, optUndoDirSDDL)
+	_ = deletePrivilegesReady() // 幂等开启 SeRestorePrivilege，用于设置所有者
+	sd, err := windows.SecurityDescriptorFromString(optUndoDirSDDL)
+	if err != nil {
+		return "", err
+	}
+	sa := windows.SecurityAttributes{
+		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		SecurityDescriptor: sd,
+	}
+	p, err := windows.UTF16PtrFromString(d)
+	if err != nil {
+		return "", err
+	}
+	err = windows.CreateDirectory(p, &sa)
+	if err == nil {
+		if err := verifyOptUndoOwner(d); err != nil {
+			// 创建时带的安全描述符没生效时再补一次，仍不行就拒绝使用。
+			if herr := hardenOptUndoPath(d, optUndoDirSDDL); herr != nil {
+				return "", fmt.Errorf("设置快照目录所有权失败：%w", herr)
+			}
+			if verr := verifyOptUndoOwner(d); verr != nil {
+				return "", verr
+			}
+		}
+		return d, nil
+	}
+	if !errors.Is(err, syscall.ERROR_ALREADY_EXISTS) {
+		return "", fmt.Errorf("创建快照目录失败：%w", err)
+	}
+	// 已存在：先拒绝重解析点，再验证所有者，最后设置所有者/DACL 并复核。
+	if err := rejectReparsePoint(d); err != nil {
+		return "", fmt.Errorf("快照目录不可信：%w", err)
+	}
+	if err := verifyOptUndoOwner(d); err != nil {
+		return "", fmt.Errorf("快照目录所有权不可信：%w", err)
+	}
+	if err := hardenOptUndoPath(d, optUndoDirSDDL); err != nil {
+		return "", fmt.Errorf("收紧快照目录权限失败：%w", err)
+	}
+	if err := verifyOptUndoOwner(d); err != nil {
+		return "", fmt.Errorf("收紧后快照目录所有权仍不可信：%w", err)
+	}
+	return d, nil
 }
 
 func hardenOptUndoFile(path string) error {
+	return hardenOptUndoPath(path, optUndoFileSDDL)
+}
+
+// hardenOptUndoPath 设置所有者 + 保护 DACL。
+// 只有 Administrators / SYSTEM 能读写，普通用户不能替换快照内容。
+func hardenOptUndoPath(path, sddl string) error {
 	if err := rejectReparsePoint(path); err != nil {
 		return err
 	}
-	return setNamedDACL(path, optUndoFileSDDL)
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		return err
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil)
+}
+
+func verifyOptUndoOwner(path string) error {
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	if sd == nil {
+		return fmt.Errorf("无法读取 %s 的所有者", path)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+	if owner != nil && (owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) ||
+		owner.IsWellKnown(windows.WinLocalSystemSid)) {
+		return nil
+	}
+	return fmt.Errorf("%s 的所有者不是 Administrators/SYSTEM", path)
 }
 
 // rejectReparsePoint 拒绝符号链接/目录联接，避免用户预置一个链接把
@@ -260,8 +377,12 @@ func rejectReparsePoint(path string) error {
 	return nil
 }
 
-func setNamedDACL(path, sddl string) error {
+func hardenRegKey(k registry.Key, sddl string) error {
 	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		return err
+	}
+	owner, _, err := sd.Owner()
 	if err != nil {
 		return err
 	}
@@ -269,9 +390,96 @@ func setNamedDACL(path, sddl string) error {
 	if err != nil {
 		return err
 	}
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, dacl, nil)
+	return windows.SetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil)
+}
+
+func optUndoHmacKey() ([]byte, error) {
+	if len(optUndoHmacKeyForTest) > 0 {
+		return optUndoHmacKeyForTest, nil
+	}
+	optUndoKeyOnce.Do(func() {
+		optUndoKeyBytes, optUndoKeyErr = loadOptUndoHmacKey()
+	})
+	return optUndoKeyBytes, optUndoKeyErr
+}
+
+func loadOptUndoHmacKey() ([]byte, error) {
+	_ = deletePrivilegesReady()
+	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, optUndoHmacKeyRel, registry.ALL_ACCESS)
+	if err != nil {
+		return nil, fmt.Errorf("打开 HMAC 密钥键失败：%w", err)
+	}
+	defer k.Close()
+	// 先收紧权限，再读/写密钥值，避免密钥在可读状态下被普通用户拿走。
+	if err := hardenRegKey(k, optUndoKeySDDL); err != nil {
+		return nil, fmt.Errorf("保护 HMAC 密钥键失败：%w", err)
+	}
+	if b, _, err := k.GetBinaryValue(optUndoHmacKeyVal); err == nil {
+		if len(b) != 32 {
+			return nil, fmt.Errorf("HMAC 密钥长度异常：%d", len(b))
+		}
+		return b, nil
+	} else if err != registry.ErrNotExist {
+		return nil, err
+	}
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, err
+	}
+	if err := k.SetBinaryValue(optUndoHmacKeyVal, key); err != nil {
+		return nil, err
+	}
+	return key, nil
+}
+
+func optUndoMAC(f *optUndoFile, key []byte) ([]byte, error) {
+	clone := *f
+	clone.HMAC = ""
+	b, err := json.Marshal(&clone)
+	if err != nil {
+		return nil, err
+	}
+	h := hmac.New(sha256.New, key)
+	h.Write(b)
+	return h.Sum(nil), nil
+}
+
+func signOptUndoFile(f *optUndoFile) error {
+	key, err := optUndoHmacKey()
+	if err != nil {
+		return err
+	}
+	mac, err := optUndoMAC(f, key)
+	if err != nil {
+		return err
+	}
+	f.HMAC = hex.EncodeToString(mac)
+	return nil
+}
+
+func verifyOptUndoFile(f *optUndoFile) error {
+	if f.HMAC == "" {
+		return fmt.Errorf("快照缺少完整性校验")
+	}
+	got, err := hex.DecodeString(f.HMAC)
+	if err != nil {
+		return fmt.Errorf("快照完整性校验格式错误")
+	}
+	key, err := optUndoHmacKey()
+	if err != nil {
+		return err
+	}
+	want, err := optUndoMAC(f, key)
+	if err != nil {
+		return err
+	}
+	if !hmac.Equal(got, want) {
+		return fmt.Errorf("快照完整性校验失败，文件可能被篡改")
+	}
+	f.HMAC = ""
+	return nil
 }
 
 func loadOptUndoFile() (*optUndoFile, error) {
@@ -313,6 +521,9 @@ func loadOptUndoFile() (*optUndoFile, error) {
 	if err := dec.Decode(new(any)); err != io.EOF {
 		return nil, fmt.Errorf("操作前快照文件含多余内容")
 	}
+	if err := verifyOptUndoFile(&f); err != nil {
+		return nil, err
+	}
 	if f.Version > optUndoVersion {
 		return nil, fmt.Errorf("操作前快照版本过新（%d）", f.Version)
 	}
@@ -325,6 +536,9 @@ func loadOptUndoFile() (*optUndoFile, error) {
 func writeOptUndoFile(f *optUndoFile) error {
 	if f.Version == 0 {
 		f.Version = optUndoVersion
+	}
+	if err := signOptUndoFile(f); err != nil {
+		return err
 	}
 	b, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
@@ -455,6 +669,42 @@ func optUndoCmdRestore(it *OptItem, index int) (OptAction, bool) {
 	return OptAction{}, false
 }
 
+// optUndoCmdCoveredByService 判断这条 cmd 是否只是 net stop/start 某个服务，
+// 而同一项里已经有该服务的完整状态快照。若是，还原时跳过这条命令，
+// 由服务快照统一恢复启动类型和运行状态，避免「先 net start、后改启动类型」。
+func optUndoCmdCoveredByService(it *OptItem, index int) bool {
+	if it == nil || index < 0 || index >= len(it.Optimize) || it.Optimize[index].Kind != "cmd" {
+		return false
+	}
+	name, ok := netServiceCommand(it.Optimize[index].Cmd)
+	if !ok {
+		return false
+	}
+	for _, a := range it.Optimize {
+		if a.Kind == "service" && sameTrustedName(a.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func netServiceCommand(cmd string) (string, bool) {
+	fields := strings.Fields(cmd)
+	if len(fields) < 3 || !strings.EqualFold(fields[0], "net") {
+		return "", false
+	}
+	switch strings.ToLower(fields[1]) {
+	case "stop", "start":
+	default:
+		return "", false
+	}
+	name := strings.Trim(strings.Join(fields[2:], " "), `"`)
+	if name == "" {
+		return "", false
+	}
+	return name, true
+}
+
 // validateOptUndoEntry 把快照和内置目录逐条对齐。
 // 只接受「动作数量、动作类型、注册表路径、值名、服务名」全部匹配的快照。
 func validateOptUndoEntry(e *optUndoEntry, it *OptItem) error {
@@ -477,10 +727,16 @@ func validateOptUndoEntry(e *optUndoEntry, it *OptItem) error {
 			if err := validateUndoValue(step.RegExists, step.RegType, step.RegData); err != nil {
 				return fmt.Errorf("第 %d 条注册表数据非法：%w", i+1, err)
 			}
+			if err := validateRegKeyState(step, i+1); err != nil {
+				return err
+			}
 		case "regdelete":
 			if act.Value == "" {
 				if step.Kind != "regkey" || !sameTrustedName(step.Key, act.Key) {
 					return fmt.Errorf("第 %d 条删除整键动作与目录不匹配", i+1)
+				}
+				if step.ExistingAncestor != "" {
+					return fmt.Errorf("第 %d 条删除整键快照不应带祖先记录", i+1)
 				}
 				if !step.KeyExisted && step.KeyTree != nil {
 					return fmt.Errorf("第 %d 条删除整键快照自相矛盾", i+1)
@@ -499,6 +755,9 @@ func validateOptUndoEntry(e *optUndoEntry, it *OptItem) error {
 				if err := validateUndoValue(step.RegExists, step.RegType, step.RegData); err != nil {
 					return fmt.Errorf("第 %d 条注册表数据非法：%w", i+1, err)
 				}
+				if err := validateRegKeyState(step, i+1); err != nil {
+					return err
+				}
 			}
 		case "service":
 			if step.Kind != "service" || step.Svc == nil || !sameTrustedName(step.Svc.Name, act.Name) {
@@ -510,11 +769,14 @@ func validateOptUndoEntry(e *optUndoEntry, it *OptItem) error {
 			if step.Svc.HasDelayed && step.Svc.Delayed > 1 {
 				return fmt.Errorf("第 %d 条服务延迟启动值非法：%d", i+1, step.Svc.Delayed)
 			}
-			if !step.Svc.Existed && (step.Svc.HasStart || step.Svc.HasDelayed) {
+			if !step.Svc.Existed && (step.Svc.HasStart || step.Svc.HasDelayed || step.Svc.RunningKnown) {
 				return fmt.Errorf("第 %d 条服务快照自相矛盾", i+1)
 			}
 			if step.Svc.Existed && !step.Svc.HasStart {
 				return fmt.Errorf("第 %d 条服务快照缺少 Start", i+1)
+			}
+			if !step.Svc.RunningKnown && step.Svc.Running {
+				return fmt.Errorf("第 %d 条服务运行状态自相矛盾", i+1)
 			}
 		case "cmd":
 			if step.Kind != "cmd" {
@@ -571,12 +833,33 @@ func validateUndoValue(exists bool, typ uint32, data []byte) error {
 	return nil
 }
 
+func validateRegKeyState(step optUndoStep, n int) error {
+	if step.KeyExisted {
+		if step.ExistingAncestor != "" {
+			return fmt.Errorf("第 %d 条键状态自相矛盾", n)
+		}
+		return nil
+	}
+	if step.ExistingAncestor == "" || !isRegAncestor(step.ExistingAncestor, step.Key) {
+		return fmt.Errorf("第 %d 条键祖先记录非法", n)
+	}
+	return nil
+}
+
 func validateUndoTree(tree *optUndoTree, depth int, total *int) error {
 	if tree == nil {
 		return nil
 	}
 	if depth > optUndoMaxTreeDepth {
 		return fmt.Errorf("层级过深（>%d）", optUndoMaxTreeDepth)
+	}
+	if tree.SDDL != "" {
+		if len(tree.SDDL) > optUndoMaxSDDLLen {
+			return fmt.Errorf("安全描述符过长")
+		}
+		if _, err := windows.SecurityDescriptorFromString(tree.SDDL); err != nil {
+			return fmt.Errorf("安全描述符非法：%w", err)
+		}
 	}
 	for _, v := range tree.Values {
 		*total = *total + 1
@@ -609,7 +892,7 @@ func validateUndoTree(tree *optUndoTree, depth int, total *int) error {
 
 // applyOptItem 拍快照 → 执行 → 失败时按快照逆序补偿。
 func applyOptItem(ctx context.Context, it *OptItem) OptResult {
-	res := OptResult{ID: it.ID, Name: it.Name, OK: true}
+	res := OptResult{ID: it.ID, Name: it.Name, OK: true, Rollback: "not_needed"}
 	if len(it.Optimize) == 0 {
 		res.OK, res.Err = false, "该项没有定义动作"
 		return res
@@ -639,24 +922,31 @@ func applyOptItem(ctx context.Context, it *OptItem) OptResult {
 
 	// 失败位置的动作也可能改了一半（例如服务 Start 改完、延迟启动没写成功），
 	// 所以从 last 开始一起回退；若在动作开始前就停了，last=-1，无需补偿。
-	if last >= 0 {
-		if cerrs := compensateOptUndo(snap.Steps, it, last); len(cerrs) > 0 {
-			res.OK, res.Err = false, runErr.Error()+"；自动回退失败："+strings.Join(cerrs, "；")+"（可点还原重试）"
-			return res
-		}
-		// 补偿成功 = 这一项回到了应用前的状态。刚写进去的快照已经没有价值，
-		// 删掉它，避免以后还原时反而把用户后来的手动设置覆盖掉。
+	if last < 0 {
+		// 一条动作都没执行（例如刚开始就被取消）。本次新写的快照没有价值，
+		// 必须删掉，否则下次应用会沿用过期状态。
 		if added {
 			_ = deleteOptUndo(it.ID)
 		}
+		res.OK, res.Err = false, runErr.Error()
+		return res
 	}
-	res.OK, res.Err = false, runErr.Error()+"；已自动回退本次已执行的部分"
+	if cerrs := compensateOptUndo(snap.Steps, it, last); len(cerrs) > 0 {
+		res.OK, res.Err, res.Rollback = false, runErr.Error()+"；自动回退失败："+strings.Join(cerrs, "；")+"（可点还原重试）", "failed"
+		return res
+	}
+	// 补偿成功 = 这一项回到了应用前的状态。刚写进去的快照已经没有价值，
+	// 删掉它，避免以后还原时反而把用户后来的手动设置覆盖掉。
+	if added {
+		_ = deleteOptUndo(it.ID)
+	}
+	res.OK, res.Err, res.Rollback = false, runErr.Error()+"；已自动回退本次已执行的部分", "succeeded"
 	return res
 }
 
 // restoreOptItem 优先按操作前快照还原；没有快照时退回旧版静态还原。
 func restoreOptItem(ctx context.Context, it *OptItem) OptResult {
-	res := OptResult{ID: it.ID, Name: it.Name, OK: true}
+	res := OptResult{ID: it.ID, Name: it.Name, OK: true, Rollback: "not_needed"}
 
 	entry, ok, err := loadOptUndoEntry(it.ID)
 	if err != nil {
@@ -682,7 +972,7 @@ func restoreOptItem(ctx context.Context, it *OptItem) OptResult {
 			stopped = true
 			break
 		}
-		if _, ok := optUndoCmdRestore(it, i); ok {
+		if _, ok := optUndoCmdRestore(it, i); ok && !optUndoCmdCoveredByService(it, i) {
 			usedCmd = true
 		}
 		err := restoreUndoStep(entry.Steps[i], it, i)
@@ -720,7 +1010,7 @@ func restoreOptItem(ctx context.Context, it *OptItem) OptResult {
 // restoreOptItemStatic 旧版行为：执行写死的 Restore。
 // 失败时用刚拍的快照补偿，避免「还原到一半」。
 func restoreOptItemStatic(ctx context.Context, it *OptItem) OptResult {
-	res := OptResult{ID: it.ID, Name: it.Name, OK: true}
+	res := OptResult{ID: it.ID, Name: it.Name, OK: true, Rollback: "not_needed"}
 	if len(it.Restore) == 0 {
 		res.OK, res.Err = false, "该项没有定义还原动作，也没有操作前快照"
 		return res
@@ -736,14 +1026,16 @@ func restoreOptItemStatic(ctx context.Context, it *OptItem) OptResult {
 		res.Warn = "没有找到操作前快照（这项是旧版本应用的），已按系统默认值还原，不是应用前的状态"
 		return res
 	}
-	if last >= 0 {
-		// 静态还原的补偿没有可信的「反向命令」来源，cmd 步骤会明确报错。
-		if cerrs := compensateOptUndo(snap.Steps, nil, last); len(cerrs) > 0 {
-			res.OK, res.Err = false, runErr.Error()+"；自动回退失败："+strings.Join(cerrs, "；")
-			return res
-		}
+	if last < 0 {
+		res.OK, res.Err = false, runErr.Error()
+		return res
 	}
-	res.OK, res.Err = false, runErr.Error()+"；已自动回退本次已执行的部分"
+	// 静态还原的补偿没有可信的「反向命令」来源，cmd 步骤会明确报错。
+	if cerrs := compensateOptUndo(snap.Steps, nil, last); len(cerrs) > 0 {
+		res.OK, res.Err, res.Rollback = false, runErr.Error()+"；自动回退失败："+strings.Join(cerrs, "；"), "failed"
+		return res
+	}
+	res.OK, res.Err, res.Rollback = false, runErr.Error()+"；已自动回退本次已执行的部分", "succeeded"
 	return res
 }
 
@@ -790,12 +1082,15 @@ func restoreUndoStep(step optUndoStep, it *OptItem, index int) error {
 	case "noop":
 		return nil
 	case "regvalue":
-		return restoreRegValue(step.Key, step.Value, step.RegExists, step.RegType, step.RegData)
+		return restoreRegValue(step.Key, step.Value, step.RegExists, step.RegType, step.RegData, step.KeyExisted, step.ExistingAncestor)
 	case "regkey":
 		return restoreRegKeyTree(step.Key, step.KeyExisted, step.KeyTree)
 	case "service":
 		return restoreServiceUndo(step.Svc)
 	case "cmd":
+		if optUndoCmdCoveredByService(it, index) {
+			return nil // 服务快照已覆盖，避免重复/顺序错误的 net start / net stop
+		}
 		act, ok := optUndoCmdRestore(it, index)
 		if !ok {
 			return errOptNoUndoCmd
@@ -832,6 +1127,40 @@ func undoStepLabel(step optUndoStep, it *OptItem, index int) string {
 }
 
 // ---------- 注册表快照 ----------
+
+// captureRegKeyState 记录目标键是否存在；不存在时返回最深的已存在祖先。
+// 还原时只清理「本次创建、现在仍为空」的键，避免误删其它程序后写入的数据。
+func captureRegKeyState(keyPath string) (existed bool, ancestor string, err error) {
+	root, sub, err := regRoot(keyPath)
+	if err != nil {
+		return false, "", err
+	}
+	k, err := registry.OpenKey(root, sub, registry.QUERY_VALUE)
+	if err == nil {
+		k.Close()
+		return true, "", nil
+	}
+	if err != registry.ErrNotExist {
+		return false, "", err
+	}
+	rootName := keyPath[:strings.Index(keyPath, `\`)]
+	parts := strings.Split(sub, `\`)
+	for i := len(parts) - 1; i >= 0; i-- {
+		cand := strings.Join(parts[:i], `\`)
+		if cand == "" {
+			return false, rootName, nil
+		}
+		k, err := registry.OpenKey(root, cand, registry.QUERY_VALUE)
+		if err == nil {
+			k.Close()
+			return false, rootName + `\` + cand, nil
+		}
+		if err != registry.ErrNotExist {
+			return false, "", err
+		}
+	}
+	return false, rootName, nil
+}
 
 // readRegValueRaw 读取单个值：是否存在、原始类型、原始字节。
 // 用 GetValue(name, nil) 先问长度，再按长度取数据；不按 DWORD/SZ 猜类型。
@@ -908,7 +1237,7 @@ func setRegRaw(k registry.Key, name string, typ uint32, data []byte) error {
 	return nil
 }
 
-func restoreRegValue(keyPath, value string, exists bool, typ uint32, data []byte) error {
+func restoreRegValue(keyPath, value string, exists bool, typ uint32, data []byte, keyExisted bool, ancestor string) error {
 	root, sub, err := regRoot(keyPath)
 	if err != nil {
 		return err
@@ -921,9 +1250,13 @@ func restoreRegValue(keyPath, value string, exists bool, typ uint32, data []byte
 		if err != nil {
 			return err
 		}
-		defer k.Close()
-		if err := k.DeleteValue(value); err != nil && err != registry.ErrNotExist {
+		err = k.DeleteValue(value)
+		k.Close()
+		if err != nil && err != registry.ErrNotExist {
 			return err
+		}
+		if !keyExisted {
+			cleanupEmptyRegKeys(keyPath, ancestor)
 		}
 		return nil
 	}
@@ -935,13 +1268,65 @@ func restoreRegValue(keyPath, value string, exists bool, typ uint32, data []byte
 	return setRegRaw(k, value, typ, data)
 }
 
+// cleanupEmptyRegKeys 从 keyPath 向上删除本次创建且仍为空的键，走到 stopAt 为止。
+// 遇到非空键就停：其它程序后写入的数据必须保留。
+func cleanupEmptyRegKeys(keyPath, stopAt string) {
+	cur := keyPath
+	for cur != stopAt && isRegAncestor(stopAt, cur) {
+		if !deleteRegKeyIfEmpty(cur) {
+			return
+		}
+		i := strings.LastIndex(cur, `\`)
+		if i < 0 {
+			return
+		}
+		cur = cur[:i]
+	}
+}
+
+func isRegAncestor(ancestor, key string) bool {
+	if ancestor == "" || ancestor == key {
+		return false
+	}
+	if !strings.HasPrefix(key, ancestor) || len(key) <= len(ancestor) {
+		return false
+	}
+	return key[len(ancestor)] == '\\'
+}
+
+func deleteRegKeyIfEmpty(keyPath string) bool {
+	root, sub, err := regRoot(keyPath)
+	if err != nil {
+		return false
+	}
+	k, err := registry.OpenKey(root, sub, registry.QUERY_VALUE|registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		return false
+	}
+	names, nerr := k.ReadValueNames(-1)
+	subs, serr := k.ReadSubKeyNames(-1)
+	k.Close()
+	if nerr != nil || serr != nil || len(names) > 0 || len(subs) > 0 {
+		return false
+	}
+	if i := strings.LastIndex(sub, `\`); i >= 0 {
+		parent, err := registry.OpenKey(root, sub[:i], registry.SET_VALUE)
+		if err != nil {
+			return false
+		}
+		defer parent.Close()
+		return registry.DeleteKey(parent, sub[i+1:]) == nil
+	}
+	return registry.DeleteKey(root, sub) == nil
+}
+
 // readRegKeyTree 递归记录整个键（regdelete Value 为空时用）。
 func readRegKeyTree(keyPath string) (bool, *optUndoTree, error) {
 	root, sub, err := regRoot(keyPath)
 	if err != nil {
 		return false, nil, err
 	}
-	k, err := registry.OpenKey(root, sub, registry.QUERY_VALUE|registry.ENUMERATE_SUB_KEYS)
+	k, err := registry.OpenKey(root, sub, registry.READ|regReadControl)
 	if err == registry.ErrNotExist {
 		return false, nil, nil
 	}
@@ -961,11 +1346,15 @@ func readKeyTree(k registry.Key, depth int, budget *int) (*optUndoTree, error) {
 	if depth > optUndoMaxTreeDepth {
 		return nil, fmt.Errorf("注册表键层级过深（>%d）", optUndoMaxTreeDepth)
 	}
+	sddl, err := keySDDL(k)
+	if err != nil {
+		return nil, err
+	}
 	names, err := k.ReadValueNames(-1)
 	if err != nil {
 		return nil, err
 	}
-	tree := &optUndoTree{}
+	tree := &optUndoTree{SDDL: sddl}
 	for _, name := range names {
 		*budget = *budget - 1
 		if *budget < 0 {
@@ -990,7 +1379,7 @@ func readKeyTree(k registry.Key, depth int, budget *int) (*optUndoTree, error) {
 		if *budget < 0 {
 			return nil, fmt.Errorf("注册表键内容超过 %d 项", optUndoMaxTreeNodes)
 		}
-		sk, err := registry.OpenKey(k, name, registry.QUERY_VALUE|registry.ENUMERATE_SUB_KEYS)
+		sk, err := registry.OpenKey(k, name, registry.READ|regReadControl)
 		if err != nil {
 			return nil, err
 		}
@@ -1004,24 +1393,42 @@ func readKeyTree(k registry.Key, depth int, budget *int) (*optUndoTree, error) {
 	return tree, nil
 }
 
+func keySDDL(k registry.Key) (string, error) {
+	sd, err := windows.GetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY,
+		windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		return "", err
+	}
+	if sd == nil {
+		return "", nil
+	}
+	s := sd.String()
+	if len(s) > optUndoMaxSDDLLen {
+		return "", fmt.Errorf("安全描述符过长")
+	}
+	return s, nil
+}
+
 func restoreRegKeyTree(keyPath string, existed bool, tree *optUndoTree) error {
 	root, sub, err := regRoot(keyPath)
 	if err != nil {
 		return err
 	}
-	// 先整键删掉，保证优化过程中新增的值/子键不会残留；再按快照重建。
-	if err := deleteRegKeyTree(root, sub); err != nil {
-		return err
-	}
+	// 优化前不存在：不删除当前键。若它已经被其它程序重新创建，
+	// 保留新数据比追求「逐字节回到过去」更重要。
 	if !existed {
 		return nil
 	}
-	k, _, err := registry.CreateKey(root, sub, registry.SET_VALUE|registry.ENUMERATE_SUB_KEYS)
+	_ = deletePrivilegesReady() // 幂等开启 SeRestorePrivilege，还原所有者/组时需要
+	k, _, err := registry.CreateKey(root, sub, registry.ALL_ACCESS)
 	if err != nil {
 		return err
 	}
 	defer k.Close()
-	return writeKeyTree(k, tree)
+	if err := writeKeyTree(k, tree); err != nil {
+		return err
+	}
+	return restoreKeySDDL(k, tree)
 }
 
 func writeKeyTree(k registry.Key, tree *optUndoTree) error {
@@ -1034,17 +1441,46 @@ func writeKeyTree(k registry.Key, tree *optUndoTree) error {
 		}
 	}
 	for _, sc := range tree.Subkeys {
-		sk, _, err := registry.CreateKey(k, sc.Name, registry.SET_VALUE|registry.ENUMERATE_SUB_KEYS)
+		sk, _, err := registry.CreateKey(k, sc.Name, registry.ALL_ACCESS)
 		if err != nil {
 			return err
 		}
 		err = writeKeyTree(sk, sc.Tree)
+		if err == nil {
+			err = restoreKeySDDL(sk, sc.Tree)
+		}
 		sk.Close()
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func restoreKeySDDL(k registry.Key, tree *optUndoTree) error {
+	if tree == nil || tree.SDDL == "" {
+		return nil
+	}
+	sd, err := windows.SecurityDescriptorFromString(tree.SDDL)
+	if err != nil {
+		return fmt.Errorf("安全描述符无法解析：%w", err)
+	}
+	owner, _, err := sd.Owner()
+	if err != nil {
+		return err
+	}
+	group, _, err := sd.Group()
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	// 冻结当前有效 DACL：不重新继承父键权限，避免还原后权限与快照时不一致。
+	return windows.SetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY,
+		windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, group, dacl, nil)
 }
 
 func deleteRegKeyTree(root registry.Key, sub string) error {
@@ -1107,28 +1543,70 @@ func readServiceUndo(name string) (*optUndoService, error) {
 	} else if err != registry.ErrNotExist {
 		return nil, err
 	}
+	if running, known := queryServiceRunning(name); known {
+		s.RunningKnown, s.Running = true, running
+	}
 	return s, nil
 }
 
+// queryServiceRunning 返回服务是否在运行，以及查询是否成功。
+// 与 svcRunning 的区别：查询失败不能伪装成「已停止」。
+func queryServiceRunning(name string) (running bool, known bool) {
+	s, ok := openServiceHandle(name, svcQueryStatus)
+	if !ok {
+		return false, false
+	}
+	defer procCloseSvcH.Call(s)
+	var st [7]uint32 // SERVICE_STATUS
+	if r, _, _ := procQuerySvc.Call(s, uintptr(unsafe.Pointer(&st[0]))); r == 0 {
+		return false, false
+	}
+	return st[1] == svcStateRunning, true
+}
+
 func restoreServiceUndo(s *optUndoService) error {
-	if s == nil || !s.Existed || !s.HasStart {
-		// 优化前不存在（动作本身会失败）或没有 Start 值：没有可回写的启动类型。
+	if s == nil || !s.Existed {
 		return nil
 	}
-	if err := setServiceStart(s.Name, s.Start); err != nil {
-		return err
+	// 顺序很重要：先恢复启动类型，再按原运行状态启动/停止。
+	// 否则「net start hpet」会在服务仍是禁用状态时先执行，必然失败。
+	if s.HasStart {
+		if err := setServiceStart(s.Name, s.Start); err != nil {
+			return err
+		}
 	}
 	// setServiceStart 只保证 Start；DelayedAutoStart 按快照精确恢复（有/无都要还原）。
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, svcRegPath+s.Name, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
-	defer k.Close()
+	var serr error
 	if s.HasDelayed {
-		return k.SetDWordValue("DelayedAutoStart", s.Delayed)
+		serr = k.SetDWordValue("DelayedAutoStart", s.Delayed)
+	} else {
+		serr = k.DeleteValue("DelayedAutoStart")
+		if serr == registry.ErrNotExist {
+			serr = nil
+		}
 	}
-	if err := k.DeleteValue("DelayedAutoStart"); err != nil && err != registry.ErrNotExist {
-		return err
+	k.Close()
+	if serr != nil {
+		return serr
+	}
+	if s.RunningKnown {
+		cur, known := queryServiceRunning(s.Name)
+		if !known {
+			return fmt.Errorf("无法查询服务 %s 的当前状态", s.Name)
+		}
+		if s.Running && !cur {
+			if !svcStartWait(s.Name, svcStartTimeout(s.Name)) {
+				return fmt.Errorf("服务 %s 未能启动到运行状态", s.Name)
+			}
+		} else if !s.Running && cur {
+			if !svcStopWait(s.Name, 30*time.Second) {
+				return fmt.Errorf("服务 %s 未能停止", s.Name)
+			}
+		}
 	}
 	return nil
 }
