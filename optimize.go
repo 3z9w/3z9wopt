@@ -353,7 +353,9 @@ func setServiceStart(name string, start uint32) error {
 	}
 	if delayed {
 		var b uint32 = 1 // SERVICE_CONFIG_DELAYED_AUTO_START_INFO = 3
-		procChangeSvcCfg2.Call(s, 3, uintptr(unsafe.Pointer(&b)))
+		if r, _, e := procChangeSvcCfg2.Call(s, 3, uintptr(unsafe.Pointer(&b))); r == 0 {
+			return fmt.Errorf("设置服务 %s 延迟启动失败: %v", name, e)
+		}
 	}
 	return nil
 }

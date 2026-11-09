@@ -185,7 +185,7 @@ func captureOptUndoActs(id, name string, acts []OptAction) (*optUndoEntry, error
 		case "service":
 			svc, err := readServiceUndo(a.Name)
 			if err != nil {
-				return nil, fmt.Errorf("读取服务 %s 的启动类型失败：%w", a.Name, err)
+				return nil, fmt.Errorf("读取服务 %s 状态失败：%w", a.Name, err)
 			}
 			step.Kind, step.Svc = "service", svc
 
@@ -1481,10 +1481,19 @@ func restoreKeySDDL(k registry.Key, tree *optUndoTree) error {
 	if err != nil {
 		return err
 	}
-	// 冻结当前有效 DACL：不重新继承父键权限，避免还原后权限与快照时不一致。
-	return windows.SetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY,
-		windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		owner, group, dacl, nil)
+	// 按快照里的 SE_DACL_PROTECTED 选择继承模式：
+	// 原键允许继承就必须还原成非保护 DACL，不能无条件改成 protected。
+	info := windows.SECURITY_INFORMATION(windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION)
+	control, _, err := sd.Control()
+	if err != nil {
+		return err
+	}
+	if control&windows.SE_DACL_PROTECTED != 0 {
+		info |= windows.PROTECTED_DACL_SECURITY_INFORMATION
+	} else {
+		info |= windows.UNPROTECTED_DACL_SECURITY_INFORMATION
+	}
+	return windows.SetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY, info, owner, group, dacl, nil)
 }
 
 func deleteRegKeyTree(root registry.Key, sub string) error {
@@ -1547,25 +1556,78 @@ func readServiceUndo(name string) (*optUndoService, error) {
 	} else if err != registry.ErrNotExist {
 		return nil, err
 	}
-	if running, known := queryServiceRunning(name); known {
-		s.RunningKnown, s.Running = true, running
+	running, err := serviceStableState(name)
+	if err != nil {
+		return nil, err
 	}
+	s.RunningKnown, s.Running = true, running
 	return s, nil
 }
 
-// queryServiceRunning 返回服务是否在运行，以及查询是否成功。
-// 与 svcRunning 的区别：查询失败不能伪装成「已停止」。
-func queryServiceRunning(name string) (running bool, known bool) {
+const (
+	svcStateStopped         = 1
+	svcStateStartPending    = 2
+	svcStateStopPending     = 3
+	svcStateContinuePending = 5
+	svcStatePausePending    = 6
+	svcStatePaused          = 7
+)
+
+var errServicePending = errors.New("服务处于过渡状态")
+
+// queryServiceState 返回原始服务状态。known=false 表示查询失败。
+// 不能把查询失败伪装成「已停止」。
+func queryServiceState(name string) (state uint32, known bool) {
 	s, ok := openServiceHandle(name, svcQueryStatus)
 	if !ok {
-		return false, false
+		return 0, false
 	}
 	defer procCloseSvcH.Call(s)
 	var st [7]uint32 // SERVICE_STATUS
 	if r, _, _ := procQuerySvc.Call(s, uintptr(unsafe.Pointer(&st[0]))); r == 0 {
-		return false, false
+		return 0, false
 	}
-	return st[1] == svcStateRunning, true
+	return st[1], true
+}
+
+// serviceStateVerdict 把原始状态分成可精确恢复、可等待、不可恢复三类。
+func serviceStateVerdict(state uint32) (running bool, stable bool, err error) {
+	switch state {
+	case svcStateRunning:
+		return true, true, nil
+	case svcStateStopped:
+		return false, true, nil
+	case svcStatePaused:
+		return false, false, fmt.Errorf("服务处于暂停状态，暂不支持精确恢复")
+	case svcStateStartPending, svcStateStopPending, svcStateContinuePending, svcStatePausePending:
+		return false, false, errServicePending
+	default:
+		return false, false, fmt.Errorf("未知服务状态：%d", state)
+	}
+}
+
+// serviceStableState 等待服务进入 RUNNING/STOPPED。
+// PAUSED、未知状态和超时的 PENDING 都返回明确错误，不猜一个 false。
+func serviceStableState(name string) (running bool, err error) {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		state, known := queryServiceState(name)
+		if !known {
+			return false, fmt.Errorf("无法查询服务 %s 的当前状态", name)
+		}
+		running, stable, err := serviceStateVerdict(state)
+		if stable {
+			return running, nil
+		}
+		if errors.Is(err, errServicePending) && time.Now().Before(deadline) {
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		if errors.Is(err, errServicePending) {
+			return false, fmt.Errorf("服务 %s 处于过渡状态，暂无法精确恢复", name)
+		}
+		return false, fmt.Errorf("服务 %s：%w", name, err)
+	}
 }
 
 func restoreServiceUndo(s *optUndoService) error {
@@ -1598,9 +1660,9 @@ func restoreServiceUndo(s *optUndoService) error {
 		return serr
 	}
 	if s.RunningKnown {
-		cur, known := queryServiceRunning(s.Name)
-		if !known {
-			return fmt.Errorf("无法查询服务 %s 的当前状态", s.Name)
+		cur, err := serviceStableState(s.Name)
+		if err != nil {
+			return err
 		}
 		if s.Running && !cur {
 			if !svcStartWait(s.Name, svcStartTimeout(s.Name)) {

@@ -6,10 +6,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -204,6 +206,23 @@ func TestOptUndoRestoresDeletedKeyTree(t *testing.T) {
 	}
 	if v, ok := testReadDword(t, key, "NewAfterApply"); !ok || v != 9 {
 		t.Fatalf("优化后新写入的值不应被还原删除，实际 %d exists=%v", v, ok)
+	}
+	// 原键允许继承父键权限，还原后不能变成 protected DACL。
+	k, err = registry.OpenKey(registry.CURRENT_USER, parent, registry.READ|regReadControl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.GetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY, windows.DACL_SECURITY_INFORMATION)
+	k.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	control, _, err := sd.Control()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if control&windows.SE_DACL_PROTECTED != 0 {
+		t.Fatal("原本允许继承的键，还原后不应变成受保护 DACL")
 	}
 }
 
@@ -441,6 +460,41 @@ func TestOptUndoCmdCoveredByService(t *testing.T) {
 	other := &OptItem{Optimize: []OptAction{{Kind: "cmd", Cmd: "net stop other"}}}
 	if optUndoCmdCoveredByService(other, 0) {
 		t.Fatal("没有对应服务快照的 net stop 不应被跳过")
+	}
+}
+
+func TestServiceStateVerdict(t *testing.T) {
+	cases := []struct {
+		name      string
+		state     uint32
+		running   bool
+		stable    bool
+		isPending bool
+	}{
+		{"running", svcStateRunning, true, true, false},
+		{"stopped", svcStateStopped, false, true, false},
+		{"start pending", svcStateStartPending, false, false, true},
+		{"stop pending", svcStateStopPending, false, false, true},
+		{"continue pending", svcStateContinuePending, false, false, true},
+		{"pause pending", svcStatePausePending, false, false, true},
+		{"paused", svcStatePaused, false, false, false},
+		{"unknown", 99, false, false, false},
+	}
+	for _, c := range cases {
+		running, stable, err := serviceStateVerdict(c.state)
+		if running != c.running || stable != c.stable {
+			t.Fatalf("%s: got running=%v stable=%v, want running=%v stable=%v",
+				c.name, running, stable, c.running, c.stable)
+		}
+		if c.stable && err != nil {
+			t.Fatalf("%s: 稳定状态不应返回错误：%v", c.name, err)
+		}
+		if !c.stable && err == nil {
+			t.Fatalf("%s: 非稳定状态必须返回错误", c.name)
+		}
+		if c.isPending && !errors.Is(err, errServicePending) {
+			t.Fatalf("%s: 应是可等待的 PENDING，实际 %v", c.name, err)
+		}
 	}
 }
 

@@ -444,7 +444,7 @@ function optRestoreAll(){
       var warn = list.filter(function(r){ return r.ok && r.warn; }).length;
       OPT_BUSY = null;
       toast('已恢复 ' + ok + ' / ' + ids.length + ' 项'
-            + (warn ? ('，其中 ' + warn + ' 项没有操作前快照，只能恢复系统默认值') : ''),
+            + (warn ? ('，其中 ' + warn + ' 项存在还原提示') : ''),
             ok === ids.length ? 'ok' : 'warn');
       loadOptCatalog();
     }).catch(function(e){
