@@ -56,9 +56,9 @@ import (
 )
 
 const (
-	// 2：移除快照里的命令文本，改为从内置 optCatalog 解析。
-	// 旧版 1 的文件含 cmd 字段，会因 DisallowUnknownFields 被拒绝。
-	optUndoVersion      = 2
+	// 3：加入 HMAC 完整性校验。
+	// 2 及更早的快照没有 HMAC，不能按可信数据读取，必须明确拒绝。
+	optUndoVersion      = 3
 	optUndoMaxValueSize = 16 << 20 // 单个注册表值上限 16 MB，防止异常值撑爆日志
 	optUndoMaxTreeNodes = 4096     // 整键快照最多 4096 个值/子键
 	optUndoMaxTreeDepth = 16
@@ -220,6 +220,8 @@ const (
 	optUndoHmacKeyRel  = `SOFTWARE\3z9wOpt`
 	optUndoHmacKeyVal  = "UndoHmacKey"
 )
+
+var errOptUndoIncompatible = errors.New("操作前快照版本不兼容")
 
 var (
 	optUndoMu sync.Mutex
@@ -512,6 +514,22 @@ func loadOptUndoFile() (*optUndoFile, error) {
 	if len(b) > optUndoMaxFileSize {
 		return nil, fmt.Errorf("操作前快照文件过大（%d 字节）", len(b))
 	}
+	// 先只读版本号：旧版快照可能没有 HMAC，必须在验签之前给出明确的不兼容提示。
+	var head struct {
+		Version int `json:"version"`
+	}
+	if err := json.Unmarshal(b, &head); err != nil {
+		return nil, err
+	}
+	if head.Version != optUndoVersion {
+		reason := "旧版没有完整性校验"
+		if head.Version > optUndoVersion {
+			reason = "快照版本高于当前程序"
+		}
+		return nil, fmt.Errorf("%w：快照版本 %d，当前版本 %d；%s，已拒绝读取 %s，请删除后重试",
+			errOptUndoIncompatible, head.Version, optUndoVersion, reason, p)
+	}
+
 	var f optUndoFile
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.DisallowUnknownFields() // 文件按不可信输入处理，不认识的字段直接拒绝
@@ -524,9 +542,6 @@ func loadOptUndoFile() (*optUndoFile, error) {
 	if err := verifyOptUndoFile(&f); err != nil {
 		return nil, err
 	}
-	if f.Version > optUndoVersion {
-		return nil, fmt.Errorf("操作前快照版本过新（%d）", f.Version)
-	}
 	if len(f.Items) > optUndoMaxItems {
 		return nil, fmt.Errorf("操作前快照条目过多（%d）", len(f.Items))
 	}
@@ -534,9 +549,8 @@ func loadOptUndoFile() (*optUndoFile, error) {
 }
 
 func writeOptUndoFile(f *optUndoFile) error {
-	if f.Version == 0 {
-		f.Version = optUndoVersion
-	}
+	// 只写当前版本：旧版本没有 HMAC，不能在这里被无意写回。
+	f.Version = optUndoVersion
 	if err := signOptUndoFile(f); err != nil {
 		return err
 	}
@@ -950,6 +964,17 @@ func restoreOptItem(ctx context.Context, it *OptItem) OptResult {
 
 	entry, ok, err := loadOptUndoEntry(it.ID)
 	if err != nil {
+		if errors.Is(err, errOptUndoIncompatible) && len(it.Restore) > 0 {
+			// 旧版快照不可信，不能用；但静态 Restore 来自内置目录，可以安全地
+			// 退回「恢复默认值」，并把原因如实告诉用户。
+			out := restoreOptItemStatic(ctx, it)
+			if out.OK {
+				out.Warn = "旧版操作前快照与当前版本不兼容，已按系统默认值还原（未读取旧快照数据）：" + err.Error()
+			} else {
+				out.Err += "；原快照版本不兼容：" + err.Error()
+			}
+			return out
+		}
 		res.OK, res.Err = false, "读取操作前快照失败："+err.Error()
 		return res
 	}

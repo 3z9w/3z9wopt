@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -406,7 +407,7 @@ func TestOptUndoRejectsUnknownJSONField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := `{"version":1,"items":[{"id":"x","name":"x","at":"","steps":[` +
+	body := fmt.Sprintf(`{"version":%d,"items":[{"id":"x","name":"x","at":"","steps":[`, optUndoVersion) +
 		`{"kind":"cmd","cmd":{"cmd":"calc.exe"}}]}]}`
 	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -513,6 +514,47 @@ func TestOptUndoRejectsBadServiceRunningState(t *testing.T) {
 	e.Steps[0].Svc.RunningKnown = true
 	if err := validateOptUndoEntry(e, it); err != nil {
 		t.Fatalf("合法的运行状态快照不应被拒绝：%v", err)
+	}
+}
+
+// 回归：中间版本生成过 version=2 但没有 HMAC 的快照。
+// 不能把它当成可信数据，也不能静默失败；应给出明确的不兼容提示，
+// 并在有静态 Restore 时退回「恢复默认值」。
+func TestOptUndoRejectsOldV2WithoutHMAC(t *testing.T) {
+	useTempOptUndo(t)
+	cleanupOptTestKeys()
+	defer cleanupOptTestKeys()
+
+	p, err := optUndoPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := []byte(`{"version":2,"items":[]}`)
+	if err := os.WriteFile(p, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadOptUndoFile(); !errors.Is(err, errOptUndoIncompatible) {
+		t.Fatalf("v2 无 HMAC 快照应报版本不兼容，实际 %v", err)
+	}
+
+	key := `HKEY_CURRENT_USER\` + optTestKey
+	if err := execRegWrite(OptAction{Kind: "regwrite", Key: key, Value: "UndoDword", Vtype: "REG_DWORD", Data: "0"}); err != nil {
+		t.Fatal(err)
+	}
+	it := &OptItem{
+		ID: "undo-v2", Name: "undo v2",
+		Optimize: []OptAction{{Kind: "regwrite", Key: key, Value: "UndoDword", Vtype: "REG_DWORD", Data: "0"}},
+		Restore:  []OptAction{{Kind: "regwrite", Key: key, Value: "UndoDword", Vtype: "REG_DWORD", Data: "1"}},
+	}
+	res := restoreOptItem(context.Background(), it)
+	if !res.OK {
+		t.Fatalf("旧快照不兼容时应退回静态还原，实际失败：%s", res.Err)
+	}
+	if res.Warn == "" {
+		t.Fatal("退回静态还原时必须说明旧快照不兼容")
+	}
+	if v, ok := testReadDword(t, key, "UndoDword"); !ok || v != 1 {
+		t.Fatalf("静态还原应写默认值 1，实际 %d exists=%v", v, ok)
 	}
 }
 
