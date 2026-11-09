@@ -56,6 +56,7 @@ type OptResult struct {
 	Name string `json:"name"`
 	OK   bool   `json:"ok"`
 	Err  string `json:"err"`
+	Warn string `json:"warn,omitempty"` // 非致命提示：例如旧版本项没有操作前快照，只能恢复默认值
 }
 
 // ---------- 注册表路径解析 ----------
@@ -463,29 +464,25 @@ func (a *App) runOptimize(ids []string, restore bool) []OptResult {
 			continue // 白名单之外的 ID 直接拒绝
 		}
 		a.emit("opt:progress", done, total, it.Name, it.ID)
-		acts := it.Optimize
+		// 应用与还原都走快照语义：
+		//   应用 = 先记录操作前状态，再执行；失败自动回退本项已改的部分。
+		//   还原 = 优先按快照回到应用前，找不到快照才退回写死的 Restore（默认值）。
+		var res OptResult
 		if restore {
-			acts = it.Restore
-		}
-		res := OptResult{ID: it.ID, Name: it.Name, OK: true}
-		if len(acts) == 0 {
-			res.OK, res.Err = false, "该项没有定义动作"
-		}
-		for _, act := range acts {
-			if ctx.Err() != nil {
-				res.OK, res.Err = false, "已停止"
-				break
-			}
-			if err := execOptAction(ctx, act); err != nil {
-				res.OK, res.Err = false, err.Error()
-				break // 一条失败就停该项：后面的动作多半依赖前面的结果
-			}
+			res = restoreOptItem(ctx, it)
+		} else {
+			res = applyOptItem(ctx, it)
 		}
 		results = append(results, res)
 		done++
 		cleanTrace(fmt.Sprintf("  opt %s ok=%v err=%q", res.ID, res.OK, res.Err))
 		a.emit("opt:progress", done, total, "", "")
 	}
+	kind := "optimize"
+	if restore {
+		kind = "revert"
+	}
+	logOptimize(kind, results)
 	return results
 }
 

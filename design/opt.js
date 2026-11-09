@@ -372,7 +372,7 @@ function optAskApply(){
       var ok = (res || []).filter(function(r){ return r.ok; }).length;
       var bad = (res || []).filter(function(r){ return !r.ok; });
       OPT_BUSY = null; OPT_SEL = {};
-      toast('已应用 ' + ok + ' / ' + ids.length + ' 项' + (bad.length ? ('，失败 ' + bad.length + ' 项') : ''),
+      toast('已应用 ' + ok + ' / ' + ids.length + ' 项' + (bad.length ? ('，失败 ' + bad.length + ' 项（已自动回退失败项的改动）') : ''),
             bad.length ? 'warn' : 'ok');
       loadOptCatalog();
     }).catch(function(e){
@@ -402,7 +402,10 @@ function optAskRestoreOne(id){
   var doIt = function(){
     callGo('RestoreOptimize', [id]).then(function(res){
       var r = (res || [])[0] || {};
-      toast(r.ok ? ('已还原：' + it.name) : ('还原失败：' + (r.err || '未知原因')), r.ok ? 'ok' : 'danger');
+      var msg = r.ok
+        ? ('已还原：' + it.name + (r.warn ? '（' + r.warn + '）' : ''))
+        : ('还原失败：' + (r.err || '未知原因'));
+      toast(msg, r.ok ? 'ok' : 'danger');
       loadOptCatalog();
     }).catch(function(e){ toast('还原失败：' + e, 'danger'); });
   };
@@ -410,7 +413,7 @@ function optAskRestoreOne(id){
   box.innerHTML = '<div class="modal-t">还原这一项？</div>'
     + '<div class="modal-d">' + optEsc(it.name) + '</div>'
     + '<div style="font-size:12.5px;line-height:1.85;color:var(--tx2)">'
-    +   '<b>会发生什么</b>：把它改回系统原来的状态<br>'
+    +   '<b>会发生什么</b>：注册表与服务启动类型按操作前快照精确恢复；命令类动作按预置还原命令处理<br>'
     +   '<b>影响面多大</b>：只这一项，其它优化保持现状<br>'
     +   '<b>怎么撤回</b>：还原本身也会记进操作日志'
     + '</div>'
@@ -428,9 +431,13 @@ function optRestoreAll(){
     OPT_BUSY = { done: 0, total: ids.length, name: '正在全部恢复…' };
     if(cur === 'optimize') render();
     callGo('RestoreOptimize', ids).then(function(res){
-      var ok = (res || []).filter(function(r){ return r.ok; }).length;
+      var list = res || [];
+      var ok = list.filter(function(r){ return r.ok; }).length;
+      var warn = list.filter(function(r){ return r.ok && r.warn; }).length;
       OPT_BUSY = null;
-      toast('已恢复 ' + ok + ' / ' + ids.length + ' 项', ok === ids.length ? 'ok' : 'warn');
+      toast('已恢复 ' + ok + ' / ' + ids.length + ' 项'
+            + (warn ? ('，其中 ' + warn + ' 项没有操作前快照，只能恢复系统默认值') : ''),
+            ok === ids.length ? 'ok' : 'warn');
       loadOptCatalog();
     }).catch(function(e){
       OPT_BUSY = null;
@@ -441,7 +448,7 @@ function optRestoreAll(){
   if(!box){ doIt(); return; }
   box.innerHTML = '<div class="modal-t">把 ' + ids.length + ' 项优化全部恢复？</div>'
     + '<div style="font-size:12.5px;line-height:1.85;color:var(--tx2)">'
-    +   '<b>会发生什么</b>：把这 ' + ids.length + ' 项逐个改回系统原状<br>'
+    +   '<b>会发生什么</b>：把这 ' + ids.length + ' 项逐个改回应用之前的状态（注册表/服务精确恢复，命令类按预置还原命令）<br>'
     +   '<b>影响面多大</b>：只动这些已优化的项<br>'
     +   '<b>怎么撤回</b>：恢复后想再优化，重新勾选应用即可'
     + '</div>'
