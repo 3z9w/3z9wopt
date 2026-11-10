@@ -5,10 +5,19 @@
 
    ⚠️ .modal-box 没有 max-height（项目铁律：弹窗内容区自己限高），
    不套 .set-scroll 这层，1020×660 的机器上底部按钮会被顶出屏幕点不到。 */
-.modal-box.setbox{--set-h:min(56vh,452px);width:min(880px,94vw);padding:16px 18px 12px}
+.modal-box.setbox{--set-h:min(64vh,500px);width:min(880px,94vw);padding:16px 18px 12px}
 .set-box-t{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .set-box-sub{margin-left:auto;font-size:12px;color:var(--tx3);font-weight:400;
   display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* 标题栏右上角的 ×（2026-11-10）：跟右下角「关闭」走同一个 closeSettings()。
+   不写绝对定位，靠 .set-box-sub 的 margin-left:auto 顶到最右，切 tab 也不会飘。 */
+.set-x{flex:0 0 auto;appearance:none;-webkit-appearance:none;width:26px;height:26px;
+  display:inline-flex;align-items:center;justify-content:center;padding:0;
+  border:1px solid transparent;border-radius:8px;background:transparent;
+  color:var(--tx2);font:inherit;font-size:18px;line-height:1;cursor:pointer;
+  transition:background .14s var(--e1),color .14s var(--e1),border-color .14s var(--e1)}
+.set-x:hover{background:var(--glass-hi);border-color:var(--stroke-2);color:var(--tx1)}
+.set-x:active{background:var(--glass-sink)}
 /* 固定高度：给的是 height 不是 max-height —— 面板空着也占这么高，切 tab 不抖 */
 .set-scroll{height:var(--set-h);overflow:auto;margin:0 -8px 6px;padding:0 8px}
 /* 装不下时给底部一道淡出，让"下面还有"看得出来 */

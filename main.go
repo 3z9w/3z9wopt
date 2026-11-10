@@ -99,13 +99,6 @@ var toolsJS []byte
 //go:embed design/tools.css
 var toolsCSS []byte
 
-// 服务大厅页（2026-10-13 拆成独立模块：design/svc.js + design/svc.css）
-//go:embed design/svc.js
-var svcJS []byte
-
-//go:embed design/svc.css
-var svcCSS []byte
-
 // 关于页（2026-10-13 拆成独立模块：design/about.js + design/about.css）
 //go:embed design/about.js
 var aboutJS []byte
@@ -199,14 +192,6 @@ func serveDesignPage(next http.Handler) http.Handler {
 			case "/tools.css":
 				w.Header().Set("Content-Type", "text/css; charset=utf-8")
 				_, _ = w.Write(toolsCSS)
-				return
-			case "/svc.js":
-				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-				_, _ = w.Write(svcJS)
-				return
-			case "/svc.css":
-				w.Header().Set("Content-Type", "text/css; charset=utf-8")
-				_, _ = w.Write(svcCSS)
 				return
 			case "/about.js":
 				w.Header().Set("Content-Type", "text/javascript; charset=utf-8")

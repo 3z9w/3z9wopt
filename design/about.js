@@ -2,11 +2,10 @@
    关于 · 独立模块（design/about.js）· 2026-10-13 按 v2 老版本原样移植
    ---------------------------------------------------------------------------
    版面照 v2（frontend/dist/app.js 第 5591~5686 行）：
-     hero（图标 + 名称 + 版本 + 一句话 + 四个动作）
-     → 三张卡：软件信息 / 联系作者·微信群 / QQ 交流群
-     → 底部一条温馨小提示
+     hero（图标 + 名称 + 版本信息一行 + 动作）
+     → 两张卡：QQ 交流群 / 联系作者（微信二维码）
 
-   只换了皮：配色、圆角、描边全走 v1.1 变量，跟服务大厅同一套语言。
+   只换了皮：配色、圆角、描边全走 v1.1 变量，跟设置面板同一套语言。
    数据全部来自后端 GetAboutInfo()：版本 / 构建日期 / 官网 / Bug 入口 /
    微信号 / 微信群码 / QQ 群号 / QQ 群码 —— 页面上不写死任何一项。
 
@@ -69,7 +68,7 @@ window.loadAbout = loadAbout;
 
 /* ── 渲染 ─────────────────────────────────────────────────────────────────── */
 
-/* 设置弹窗里那个「关于」面板：同样的三卡版式，但不要本文件的 page-head ——
+/* 设置弹窗里那个「关于」面板：同样的两卡版式，但不要本文件的 page-head ——
    面板标题由弹窗的导航项给出，再叠一层「关于 / 版本信息 · 联系作者」是重复。
    ⚠️ loading / failed 两态也要写清楚，不许甩空白（读不到就是读不到）。 */
 function renderAboutPane(){
@@ -86,7 +85,7 @@ function renderAboutPane(){
       + '<div class="empty-ico" style="color:var(--info)">' + ico('refresh', 28) + '</div>'
       + '<div class="empty-t">正在读版本信息…</div></div></div>';
   }
-  /* 面板比整页窄（撑死 620px），三列卡片会挤成一团 —— 这里降成两列 */
+  /* 面板比整页窄（撑死 620px），两卡各占一列，CSS 的 auto-fit 会自己落版 */
   return '<div class="ab-pane">' + abBodyHtml() + '</div>';
 }
 window.renderAboutPane = renderAboutPane;
@@ -100,12 +99,12 @@ function abBodyHtml(){
   var bn = a.buildNum || '';
   var bl = bn || bd;
   var wxid = a.wxid || 'RESBJD';
-  var wxQr = a.wxGroupQr || a.wxQr || '';
+  var wxQr = a.wxQr || a.wxGroupQr || '';
   var qq = a.qq || '', qqQr = a.qqQr || '';
 
   var acts = '<button class="btn sm" data-abact="site">' + abIco('globe', 13) + '访问官网</button>'
     + '<button class="btn sm" data-abact="publish">' + abIco('box', 13) + '发布页</button>'
-    + '<button class="btn sm" data-abact="bug">' + abIco('warn', 13) + 'Bug 反馈</button>';
+    + '<button class="btn sm" data-abact="github">' + abIco('box', 13) + 'GitHub 仓库</button>';
   if(typeof openPraise === 'function'){
     acts += '<button class="btn sm" data-abact="praise">' + abIco('heart', 13) + '赞赏支持</button>';
   }
@@ -119,43 +118,34 @@ function abBodyHtml(){
   return '<div class="card ab-hero">'
     + (AB_LOGO ? '<img class="ab-logo" src="' + abEsc(AB_LOGO) + '" alt="3Z9W">' : '')
     + '<div class="ab-name">无名大叔 · 系统优化工具箱</div>'
-    + '<div class="ab-ver">' + abEsc(ver) + (bl ? ' · 构建 ' + abEsc(bl) : '') + ' · 本地运行</div>'
-    + '<p class="ab-desc">体检、清理、优化、修复，一台机器全搞定；自己搞不定的，一键找大叔远程修。</p>'
+    /* 2026-11-10：四项信息全并进版本这一行，不另起「软件信息」表格 ——
+       四行分行太占高度；版本号 / 构建号 / 本地运行本来就在，只补技术架构与数据处理。 */
+    + '<div class="ab-ver">' + abEsc(ver) + (bl ? ' · 构建 ' + abEsc(bl) : '')
+    +   ' · 本地运行 · Go + Wails · 数据全部在本机完成，不上传</div>'
+
     + '<div class="ab-acts">' + acts + '</div>'
     + '</div>'
 
     + '<div class="ab-grid">'
 
-    + '<div class="card ab-card">'
-    +   '<div class="ab-t">' + abIco('info', 15) + '软件信息</div>'
-    +   '<div class="ab-row"><span>版本</span><b>' + abEsc(ver) + '</b></div>'
-    +   '<div class="ab-row"><span>' + (bn ? '构建号' : '构建日期') + '</span><b>' + abEsc(bl || '—') + '</b></div>'
-    +   '<div class="ab-row"><span>技术架构</span><b>Go + Wails · 本地运行</b></div>'
-    +   '<div class="ab-row"><span>官方网站</span><b>' + abEsc(abHost(a.site)) + '</b></div>'
-    +   '<div class="ab-row"><span>发布页</span><b>' + abEsc(abHost(a.publish)) + '</b></div>'
-    +   '<div class="ab-row"><span>数据处理</span><b>全部在本机完成，不上传</b></div>'
-    + '</div>'
-
-    + '<div class="card ab-card">'
-    +   '<div class="ab-t">' + abIco('message', 15) + '联系作者 · 微信群</div>'
-    +   (wxQr ? '<div class="ab-qr">' + qrBox(wxQr, '微信群二维码') + '</div>' : '')
-    +   '<div class="ab-qr-tip">' + (a.wxGroupQr ? '扫码进微信群，电脑问题直接问' : '扫码加作者微信') + '</div>'
-    +   '<div class="ab-wxid">微信号 <b>' + abEsc(wxid) + '</b>'
-    +     '<button class="btn sm" data-abact="copywx">' + abIco('copy', 13) + '复制</button></div>'
-    + '</div>'
-
+    /* 区块一：QQ 交流群 */
     + '<div class="card ab-card">'
     +   '<div class="ab-t">' + abIco('help', 15) + 'QQ 交流群</div>'
     +   (qqQr ? '<div class="ab-qr">' + qrBox(qqQr, 'QQ 群二维码') + '</div>' : '')
     +   '<div class="ab-qq"><span>群号</span><b>' + abEsc(qq || '—') + '</b></div>'
-    +   '<div class="ab-qr-tip">加群备注「优化」，反馈与答疑都在群里</div>'
     +   '<div class="ab-wxid"><button class="btn sm" data-abact="copyqq">' + abIco('copy', 13) + '复制群号</button></div>'
     + '</div>'
 
+    /* 区块二：联系作者（微信二维码）。wxQr 由后端 qrFile() 探测 frontend/dist/weixin-qr.png */
+    + '<div class="card ab-card">'
+    +   '<div class="ab-t">' + abIco('message', 15) + '联系作者</div>'
+    +   (wxQr ? '<div class="ab-qr">' + qrBox(wxQr, '作者微信二维码') + '</div>' : '')
+    +   '<div class="ab-qr-tip">扫码加作者微信，反馈与交流</div>'
+    +   '<div class="ab-wxid">微信号 <b>' + abEsc(wxid) + '</b>'
+    +     '<button class="btn sm" data-abact="copywx">' + abIco('copy', 13) + '复制</button></div>'
     + '</div>'
 
-    + '<div class="card ab-note">' + abIco('shield', 16)
-    + '<span>温馨小提示：优化会顺手动一动系统设置。要是怕哪步不合心意，先去「工具库」存个系统还原点当后悔药，随时能一键回到从前，权当啥也没发生过～</span></div>';
+    + '</div>';
 }
 
 /* ── 绑定 ─────────────────────────────────────────────────────────────────── */
@@ -169,9 +159,9 @@ function abClick(e){
   var act = b.getAttribute('data-abact');
   if(act === 'site') abOpen(a.site || 'https://www.3z9w.com');
   else if(act === 'publish') abOpen(a.publish || a.site || 'https://opt.3z9w.com/');
-  else if(act === 'bug') abOpen(a.bug || a.site || 'https://www.3z9w.com/1892.html#comments');
+  else if(act === 'github') abOpen(a.github || 'https://github.com/3z9w/3z9wopt');
   else if(act === 'praise'){ if(typeof openPraise === 'function') openPraise(); }
-  else if(act === 'svc'){ if(typeof go === 'function') go('svc'); }
+  else if(act === 'svc'){ if(typeof window.openService === 'function') window.openService(); }
   else if(act === 'copywx') abCopy(a.wxid || 'RESBJD', '微信号已复制，去微信添加好友吧');
   else if(act === 'copyqq') abCopy(a.qq || '', 'QQ 群号已复制，去 QQ 搜索群号加群');
   else if(act === 'retry'){ AB.state = 'loading'; loadAbout(); if(typeof render === 'function') render(); }

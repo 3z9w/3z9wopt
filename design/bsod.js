@@ -226,9 +226,7 @@ function bsShowDetail(d, file, deep){
   var sc = bsEl('bsDSvc');
   if(sc) sc.onclick = function(){
     closeModal();
-    if(typeof go === 'function') go('svc');
-    /* 服务大厅是按需读取的，第一次点进来可能还没数据 —— 补一次（幂等，读到会自己重绘） */
-    if(typeof loadSvc === 'function') loadSvc();
+    if(typeof window.openService === 'function') window.openService();
   };
   if(deep){ return; }              /* 已经是深析结果，直接显示 */
   bsFillDetail(d, file);

@@ -32,6 +32,9 @@ const SET_TABS = [
   {id:'about',    n:'关于',       ico:'info'}
 ];
 let SET_TAB = 'general';
+/* 「关于数据已主动拉过」的标记：setPaneAbout() 和切 tab 那处共用同一份，
+   别每次翻页都重拉。放最上面是因为渲染函数一进来就要读，别踩 let 的暂时性死区。 */
+let SET_ABOUT_ASKED = false;
 
 /* 面板共用的零件。五个面板必须用同一份 ——
    分开抄的话，switch 的 data-set 就会有两种写法，正是以前被骂「假开关」的起因。 */
@@ -78,9 +81,15 @@ function setPaneUpdate(){
   const elevTxt = SET.elev === null ? '未获取到' : (SET.elev ? '管理员' : '普通用户');
   /* 更新日志：跳发布页（后端 GetAboutInfo().publish，前端不写死网址）。
      描述里带上域名，让用户点之前就知道要去哪儿 —— 读不到就明说，不拿官网顶。 */
-  const pubUrl = (SET.about || window.ABOUT || {}).publish || '';
+  const ab = SET.about || window.ABOUT || {};
+  const pubUrl = ab.publish || '';
   const pubHost = pubUrl ? pubUrl.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') : '';
-  const verTxt = SET.ver ? verLabel(SET.ver) : 'v1.1.0';   /* 读不到就退回侧栏那个版本号 */
+  /* 读不到就写「未获取到」：硬编码 v1.1.0 会让 1.2.0 之后一直显示错版本 */
+  const verTxt = SET.ver ? verLabel(SET.ver) : '未获取到';
+  /* 构建标识跟关于页统一口径：优先发布构建号 20261110.1，没有才退回构建日期。
+     ⚠️ app.manifest 是 requireAdministrator，SET.elev 不可能为 false，
+        原来那段「现在不是管理员」的提示是死分支，已删。 */
+  const buildTxt = ab.buildNum || (SET.build && SET.build !== 'unknown' ? SET.build : '');
   const hashShort = SET.hash
     ? (SET.hash.length > 34 ? (SET.hash.slice(0, 24) + '…' + SET.hash.slice(-8)) : SET.hash)
     : '';
@@ -90,13 +99,10 @@ function setPaneUpdate(){
     + '</div>'
     + '<div class="card setcard" style="margin-top:12px">'
     +   setGrp('本软件')
-    +   setKv('版本', verTxt + (SET.build && SET.build !== 'unknown' ? '<small>'+escHome(SET.build)+'</small>' : ''))
+    +   setKv('版本', verTxt + (buildTxt ? '<small>构建 '+escHome(buildTxt)+'</small>' : ''))
     +   setKv('运行权限', elevTxt)
     +   setRow('更新日志', pubHost ? ('每个版本改了什么 · '+escHome(pubHost)) : '没读到发布页地址',
               '<button class="btn sm" id="setChangelog">打开</button>')
-    +   (SET.elev === false
-        ? '<div class="set-note">现在不是管理员，系统垃圾清理、服务与启动项管理会失败。要用这些功能，关掉本程序后右键选「以管理员身份运行」。</div>'
-        : '')
     +   setGrp('是不是官方原版')
     +   '<div class="set-kv wide" style="display:block">'
     +     '<div class="set-hash"'+(SET.hash ? ' title="'+escHome(SET.hash)+'"' : '')+'>'+(hashShort || '读取中…')+'</div>'
@@ -155,14 +161,12 @@ function setPaneLog(){
 }
 
 /* ── 面板 4：反馈 ──
-   用户 2026-10-13 拍板走「打开网页」这条路（不做填表发邮件）：
-   所有渠道都是真链接，数据全来自后端 GetAboutInfo()，页面上不写死任何一项。
-   读不到就把这一项写成「没读到」，不许塞占位号码。 */
+   2026-11-10 用户拍板只留三个入口：GitHub Issues / 邮件反馈 / QQ 交流群。
+   地址数据全部来自后端 GetAboutInfo()（issues / email / qq），页面上不写死。
+   ⚠️ QQ 群这里只给「复制群号」，不再放二维码 —— 关于页那张卡已经有了，别重复。 */
 function setPaneFeedback(){
   const a = SET.about || window.ABOUT || {};
-  const bug = a.bug || a.bugUrl || '';
-  const qq = a.qq || '', wxid = a.wxid || '';
-  const qqQr = a.qqQr || '', wxQr = a.wxGroupQr || a.wxQr || '';
+  const mail = a.email || '', qq = a.qq || '';
   const escV = escHome;
 
   const row = function(icoName, t, d, btns){
@@ -174,62 +178,36 @@ function setPaneFeedback(){
   const goBtn = function(act, label, cls){
     return '<button class="btn sm'+(cls ? ' ' + cls : '')+'" data-fbact="'+act+'">'+label+'</button>';
   };
-  const cpBtn = function(act, label){ return goBtn(act, label); };
 
   let html = '<div class="card setcard">'
-    + setGrp('说问题最有用的地方')
-    + row('warn', 'Bug 反馈',
-          bug ? '提交后大叔能看到，改没改会在下一版说明里写' : '没读到反馈地址，可直接去官网留言',
-          goBtn('bug', '去反馈', 'primary'));
+    + setGrp('反馈与答疑')
+    + row('info', 'GitHub Issues',
+          '在 GitHub 上提交问题，公开可追踪',
+          goBtn('issues', '去提交', 'primary'))
+    + row('box', '邮件反馈',
+          mail ? escV(mail) : '没读到邮箱地址',
+          goBtn('mail', '写邮件') + goBtn('copymail', ico('copy',13)+'复制邮箱'));
 
   if(qq){
     html += row('message', 'QQ 交流群',
       '群号 '+escV(qq)+'（加群备注「优化」）',
-      cpBtn('copyqq', ico('copy',13)+'复制群号') + (qqQr ? goBtn('qqqr', '看二维码') : ''));
+      goBtn('copyqq', ico('copy',13)+'复制群号'));
   }
-  if(wxid){
-    html += row('box', '微信 · 找大叔',
-      '微信号 '+escV(wxid)+' · 微信群里也能直接问',
-      cpBtn('copywx', ico('copy',13)+'复制微信号') + (wxQr ? goBtn('wxqr', '看二维码') : ''));
-  }
-  html += row('shield', '远程一对一',
-      '这台机器自己搞不定的，服务大厅里有人工接单',
-      goBtn('svc', '去服务大厅'))
-    + row('monitor', '官网',
-      '更新公告、使用说明都在官网发布页',
-      goBtn('site', '打开官网'))
-    + '</div>';
+  html += '</div>';
 
-  /* 二维码浮层：反馈面板窄，塞不下两张图 —— 点「看二维码」单独弹一张 */
-  if(!qq && !wxid){
+  if(!qq){
     html += '<div class="card setcard" style="margin-top:12px">'
-      + '<div class="set-note">没读到群号和微信号（后端没给或不在这份数据里）。'
+      + '<div class="set-note">没读到 QQ 群号（后端没给或不在这份数据里）。'
       + '这种情况去官网找联系方式最靠谱，别信别处转发的号码。</div></div>';
   }
   return html;
 }
 
-/* 二维码速览：复用弹窗那套，看完记得把设置画回来（同 askThenDo 的处理）——
-   不然关掉二维码后设置窗就没了，用户还得重新点齿轮。 */
-function fbShowQr(title, src){
-  const box = document.getElementById('modalBox'), modal = document.getElementById('modal');
-  if(!box || !modal || !src){ if(!src) toast('没有可用的二维码', 'warn'); return; }
-  SET_ASKING = true;
-  const back = function(){ SET_ASKING = false; paintSettings(); modal.classList.add('open'); };
-  box.classList.remove('setbox');
-  box.style.width = 'min(340px,92vw)';
-  box.innerHTML = '<div class="modal-t">'+title+'</div>'
-    + '<div style="text-align:center;padding:6px 0 2px">'
-    +   '<img src="'+escHome(src)+'" style="width:206px;height:206px;border-radius:10px;background:#fff" onerror="this.style.display=\'none\'">'
-    + '</div>'
-    + '<div class="modal-f"><button class="btn" id="fbQrBack">返回</button></div>';
-  modal.classList.add('open');
-  const b = document.getElementById('fbQrBack');
-  if(b) b.onclick = back;
-}
+/* 2026-11-10：反馈面板不再放二维码（关于页那两张卡已有），
+   原来的「看二维码」浮层 fbShowQr() 随之整块删除。 */
 
-/* 反馈面板的每个动作。⚠️ 每一条都得处理「读不到」：
-   地址没读到就说「没读到 + 去哪找」，绝不拿一个写死的网址顶 ——
+/* 反馈面板三个动作：一个打开网页 + 两个复制。⚠️ 每条都得处理「读不到」：
+   地址没读到就直说，绝不拿一个写死的网址顶 ——
    那等于把「没读到」演成「有地方去」，用户点开的可能已经不是我们的东西了。 */
 function setOpenUrl(u, what){
   if(!u){ toast('没读到' + what + '，去官网找最新地址最靠谱', 'warn'); return; }
@@ -237,17 +215,22 @@ function setOpenUrl(u, what){
      以前调它必失败。走主文件的 window.tbOpen（Wails runtime.BrowserOpenURL）。 */
   if(typeof window.tbOpen === 'function'){ window.tbOpen(u); return; }
   try{ window.open(u, '_blank', 'noopener'); }
-  catch(_){ toast('打开失败，地址是：' + u, 'warn'); }
+  catch(_){
+    /* mailto 拉不起来时复制一个 mailto: 链接没用 —— 直接把收件地址说清楚 */
+    if(/^mailto:/i.test(u)) toast('没检测到默认邮件客户端，请手动发到 ' + u.replace(/^mailto:/i, ''), 'warn');
+    else toast('打开失败，地址是：' + u, 'warn');
+  }
 }
 function fbAct(act){
   const a = SET.about || window.ABOUT || {};
-  if(act === 'bug'){ setOpenUrl(a.bug || a.bugUrl || '', '反馈地址'); return; }
-  if(act === 'site'){ setOpenUrl(a.site || '', '官网地址'); return; }
-  /* 服务大厅是软件里的另一页：得先把设置窗关掉再跳，不然新页面盖在残影下面 */
-  if(act === 'svc'){ closeSettings(); if(typeof go === 'function') go('svc'); return; }
-  if(act === 'qqqr'){ fbShowQr('QQ 交流群', a.qqQr || ''); return; }
-  if(act === 'wxqr'){ fbShowQr('微信群', a.wxGroupQr || a.wxQr || ''); return; }
-  const map = {copyqq: [a.qq, 'QQ 群号'], copywx: [a.wxid, '微信号']};
+  if(act === 'issues'){ setOpenUrl(a.issues || '', 'GitHub Issues 地址'); return; }
+  /* mailto: 交给系统默认邮件客户端；没读到地址就直说，别拉起一封空邮件 */
+  if(act === 'mail'){
+    if(!a.email){ toast('没读到邮箱地址', 'warn'); return; }
+    setOpenUrl('mailto:' + a.email, '邮箱地址');
+    return;
+  }
+  const map = {copyqq: [a.qq, 'QQ 群号'], copymail: [a.email, '邮箱地址']};
   const it = map[act];
   if(!it) return;
   if(!it[0]){ toast('没读到' + it[1], 'warn'); return; }
@@ -256,10 +239,7 @@ function fbAct(act){
   });
 }
 
-/* about.js 是同步 XHR + eval 载入的独立模块，够不着主文件用 let 声明的 SET_OPEN
-   （let 不挂 window）。这个桥给它一个只读入口：
-   数据回来后主文件才知道「该不该顺手把设置窗重画一遍」。 */
-window.setIsOpen = function(){ return !!SET_OPEN; };
+/* window.setIsOpen 统一在文件末尾的门面处定义一次，这里不再重复挂。 */
 
 /* ── 面板 5：关于（三卡版式原样搬进来，复用 about.js 现成的渲染）── */
 function setPaneAbout(){
@@ -299,6 +279,7 @@ function settingsModalHtml(){
         ? '<span class="set-pend-in">'+ico('warn',13)+'有 '+SET.pending.n+' 项改动要重启才生效</span>'
         : '')
     +   '</span>'
+    +   '<button class="set-x" id="setX" title="关闭设置" aria-label="关闭设置">×</button>'
     + '</div>'
     + '<div class="set-shell">'
     +   '<div class="set-nav">'+setNavHtml()+'</div>'
@@ -314,7 +295,7 @@ function openSettings(tab){
   if(!box || !modal) return;
   if(tab && SET_TABS.some(function(t){ return t.id === tab; })) SET_TAB = tab;
   SET_OPEN = true;
-  SET_ASKING = false;   /* 上次要是卡在"问话中"没复位，这里兜一下，否则窗怎么画都画不出来 */
+  window.SET_ASKING = false;   /* 上次要是卡在"问话中"没复位，这里兜一下，否则窗怎么画都画不出来 */
   box.classList.add('setbox');
   box.style.width = '';   /* 看二维码 / 确认框会把宽度改成小的，回到设置要还原 */
   paintSettings();
@@ -323,14 +304,18 @@ function openSettings(tab){
   if(!SET.ver) loadSettings();
 }
 
-let SET_ASKING = false;   /* 设置窗里正开着确认框：#modalBox 这会儿装的是确认框，别去覆盖它 */
+/* 🔴 SET_ASKING 必须挂 window：本文件是 IIFE 里 eval 载入的，
+   在这里用 let 声明只活在 eval 作用域；主文件 askThenDo()/closeModal() 里
+   裸写 SET_ASKING 会另建一个全局变量 —— 两边各写各的，paintSettings() 的拦截
+   恒 false，确认框会被异步回来的数据冲掉。统一读写 window.SET_ASKING 才是同一份状态。 */
+window.SET_ASKING = false;   /* 设置窗里正开着确认框：#modalBox 这会儿装的是确认框，别去覆盖它 */
 
 /* 🔴 2026-10-13 防重入：paintSettings → 面板 → loadAbout（没后端时**同步**回调）
    → about.js 的 abAfter() → 又 paintSettings → 无限递归（Maximum call stack size exceeded）。
    在 exe 里 loadAbout 是异步的不会撞，但浏览器直开 / 后端没就绪时必炸。
    渲染期间再进来的一律丢掉 —— 反正外面这次画完就是最新的。 */
 let SET_PAINTING = false;
-let SET_ABOUT_ASKED = false;   /* 设置窗已经主动拉过一次关于数据了，别每次重画都拉 */
+/* SET_ABOUT_ASKED 已提到文件顶部（渲染时就要读，别踩暂时性死区） */
 function paintSettings(){
   const box = document.getElementById('modalBox');
   if(!box || !SET_OPEN) return;
@@ -339,9 +324,10 @@ function paintSettings(){
      而设置的数据是异步拉回来的 —— 确认框开着的时候正好有个回调返回，
      就会把确认框直接冲成设置内容，用户刚点的"确定"就这么没了（探针实测撞到过）。
      正在问话就一律不重画。 */
-  if(SET_ASKING) return;
+  if(window.SET_ASKING) return;
   SET_PAINTING = true;
   try{
+    box.style.width = '';   /* 确认框 / 二维码浮层临时改过宽度，重画设置窗一律还原 */
     box.innerHTML = settingsModalHtml();
     box.classList.add('setbox');
     paintIcons(box);
@@ -364,8 +350,8 @@ function closeSettings(){
 function bindSettings(root){
   const q = function(sel){ return (root || document).querySelector(sel); };
   const qa = function(sel){ return (root || document).querySelectorAll(sel); };
-  const close = q('#setClose');
-  if(close) close.onclick = closeSettings;
+  /* 右下角「关闭」+ 标题栏右上角 ×：同一个 closeSettings，别写两套 */
+  qa('#setClose,#setX').forEach(function(b){ b.onclick = closeSettings; });
 
   /* ── 左导航：切分类只换右边那块 ──
      整窗重画（paintSettings）而不是局部替换，是为了让 #setScroll 的滚动和绑定一起重建；
@@ -375,8 +361,14 @@ function bindSettings(root){
       const id = b.dataset.settab;
       if(id === SET_TAB) return;
       SET_TAB = id;
-      /* 第一次翻到「关于」才去读 —— 关于 / 反馈共用同一份 GetAboutInfo */
-      if((id === 'about' || id === 'feedback') && !SET.about && typeof window.loadAbout === 'function') window.loadAbout();
+      /* 关于 / 反馈共用同一份 GetAboutInfo。⚠️ 用和 setPaneAbout() 同一个
+         SET_ABOUT_ASKED 标记：loadAbout() 只写 window.ABOUT，不写 SET.about，
+         光判 !SET.about 会让每次切 tab 都重拉一次（和「防重试风暴」的注释打架）。 */
+      if((id === 'about' || id === 'feedback') && !SET.about && !window.ABOUT
+         && !SET_ABOUT_ASKED && typeof window.loadAbout === 'function'){
+        SET_ABOUT_ASKED = true;
+        window.loadAbout();
+      }
       paintSettings();
     };
   });

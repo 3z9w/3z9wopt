@@ -7,8 +7,7 @@
 .ab-hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px 24px 20px}
 .ab-logo{width:64px;height:64px;border-radius:16px;border:1px solid var(--stroke)}
 .ab-name{margin-top:12px;font-size:17px;font-weight:700;color:var(--tx1);letter-spacing:.2px}
-.ab-ver{margin-top:5px;font-size:12px;color:var(--tx2)}
-.ab-desc{margin-top:9px;font-size:12.5px;color:var(--tx2);line-height:1.7;max-width:520px}
+.ab-ver{margin-top:5px;font-size:12px;color:var(--tx2);line-height:1.6}
 .ab-acts{display:flex;gap:8px;margin-top:15px;flex-wrap:wrap;justify-content:center}
 
 .ab-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:14px}
@@ -29,18 +28,13 @@
 .ab-qq{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:2px;font-size:12.5px;color:var(--tx2)}
 .ab-qq b{font-size:18px;font-weight:700;color:var(--tx1);font-family:Consolas,"Courier New",monospace;letter-spacing:1px}
 
-/* 设置弹窗里的「关于」面板（2026-10-13）：版面照旧，只把留白收一档。
-   面板只有 ~600px 宽，hero 原样那套 padding 会把卡片顶得很高，一屏装不下。
-   ⚠️ .ab-grid 用 auto-fit + minmax(280px)，620px 下自己落成两列，不用重写。 */
+/* 设置弹窗里的「关于」面板（2026-11-10）：常规尺寸，只把留白收一档。
+   ⚠️ 不再压缩 logo / 二维码 / 字号 —— 上一版压过头，观感太挤。
+   ⚠️ 弹窗高度在 setpanel.css 里已加高到 min(64vh,500px)，靠它一屏放下，不靠压元素。
+   ⚠️ .ab-grid 用 auto-fit + minmax(280px)，620px 下自己落成两列，不用重写。
+   ⚠️ 底部「温馨小提示」整条已删（about.js），.ab-note 样式随之移除。 */
 .ab-pane .ab-hero{padding:18px 18px 15px}
 .ab-pane .ab-logo{width:54px;height:54px;border-radius:14px}
-.ab-pane .ab-desc{font-size:12px;margin-top:7px}
 .ab-pane .ab-acts{margin-top:12px;gap:7px}
 .ab-pane .ab-grid{gap:10px;margin-top:11px}
 .ab-pane .ab-card{padding:13px 15px}
-/* 提示条在面板里就是最后一张卡，留像 others 一样的间距就行 */
-
-.ab-note{display:flex;align-items:flex-start;gap:9px;margin-top:14px;padding:13px 16px;
-  font-size:12px;color:var(--tx2);line-height:1.65}
-.ab-note svg{width:16px;height:16px;color:var(--warn);flex:0 0 auto;margin-top:1px}
-.ab-note span{min-width:0}

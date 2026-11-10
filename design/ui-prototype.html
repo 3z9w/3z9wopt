@@ -295,8 +295,6 @@ body.booting .app{animation:appRescue 0s linear 8s forwards}
 }
 .side-mini:hover{background:var(--glass-hi);color:var(--tx1)}
 .sidebar.collapsed .side-mini{justify-content:center;padding:0}
-/* 折叠后：图标保留并居中，服务大厅的彩色强调位不能跟着被折掉 */
-.sidebar.collapsed .side-cta{justify-content:center;padding:9px 0}
 /* 折叠态名称浮层：图标能省，名称不能省 */
 .nav-tip{
   position:fixed;z-index:400;pointer-events:none;padding:8px 12px;border-radius:10px;
@@ -1368,7 +1366,6 @@ html[data-motion="off"] .reveal{opacity:1 !important; transform:none !important}
 <link rel="stylesheet" href="driver.css">
 <link rel="stylesheet" href="bsod.css">
 <link rel="stylesheet" href="tools.css">
-<link rel="stylesheet" href="svc.css">
 <link rel="stylesheet" href="setpanel.css">
 <link rel="stylesheet" href="about.css">
 </head>
@@ -1418,10 +1415,6 @@ html[data-motion="off"] .reveal{opacity:1 !important; transform:none !important}
     <aside class="sidebar" id="sidebar">
       <div class="nav-scroll" id="nav"></div>
       <div class="side-foot">
-        <button class="side-cta" data-page="svc">
-          <span class="ni" data-ico="message"></span>
-          <span class="sc">服务大厅<small>远程修电脑 · 1V1 接单</small></span>
-        </button>
         <button class="side-mini" id="sideAbout" title="打开设置 · 关于"><span class="ni" data-ico="info"></span><span>关于</span></button>
       </div>
     </aside>
@@ -1764,30 +1757,6 @@ html[data-motion="off"] .reveal{opacity:1 !important; transform:none !important}
 })();
 </script>
 <script>
-/* 服务大厅页独立文件加载器（design/svc.js）
-   与 tools / bsod / driver 同一套模式：同步 XHR + 直接 eval（外链 <script src> 异步，
-   会晚于本页内联脚本执行 —— 表现为一进服务大厅 renderSvc 还没定义，整页白屏）。 */
-(function(){
-  var src = 'svc.js', code = '';
-  try{
-    var x = new XMLHttpRequest();
-    x.open('GET', src, false);
-    x.send(null);
-    if(x.status === 200 || x.status === 0) code = x.responseText;
-  }catch(e){ code = ''; }
-  if(code){ try{ eval(code); }catch(e){ console && console.error && console.error('svc.js 载入失败', e); } }
-  if(typeof window.renderSvc !== 'function'){
-    window.renderSvc = function(){
-      return '<div class="page-head"><div class="page-title">服务大厅</div>' +
-        '<div class="page-sub">该页面的独立文件未载入（svc.js），请检查安装包是否完整。</div></div>';
-    };
-  }
-  if(typeof window.bindSvc !== 'function') window.bindSvc = function(){};
-  if(typeof window.loadSvc !== 'function') window.loadSvc = function(){};
-  if(typeof window.svcDiagRun !== 'function') window.svcDiagRun = function(){ toast('服务大厅模块未载入', 'warn'); };
-})();
-</script>
-<script>
 /* 关于页独立文件加载器（design/about.js）· 同上，同步 XHR + eval */
 (function(){
   var src = 'about.js', code = '';
@@ -1954,7 +1923,7 @@ const NAV = [
 ];
 const PAGE_NAME = {};
 NAV.forEach(function(g){ g.items.forEach(function(i){ PAGE_NAME[i.id]=i.name; }); });
-PAGE_NAME.svc='服务大厅'; PAGE_NAME.set='设置'; PAGE_NAME.docs='技术文库';
+PAGE_NAME.set='设置';
 
 /* 模拟数据 */
 const FAKE = {
@@ -2010,7 +1979,6 @@ const FAKE = {
       {n:'碎片分析', d:'机械硬盘才有意义，固态不用', risk:'safe', ico:'layers'},
     ]},
     {c:'系统信息', items:[
-      {n:'生成诊断报告', d:'一键导出本机配置与运行状态', risk:'safe', ico:'file'},
       {n:'已安装补丁一览', d:'看看最近装了哪些更新', risk:'safe', ico:'doc'},
       {n:'查看开机时长', d:'这台电脑多久没重启了', risk:'safe', ico:'clock'},
     ]},
@@ -2366,7 +2334,7 @@ let cur = 'home';
 const PAGES = {
   home:renderHome, pcinfo:renderPc, clean:renderClean, optimize:renderOpt,
   appx:renderAppx, space:renderDisk, sec:renderStartup, driver:renderDriver,
-  bsod:renderBsod, tools:renderTools, svc:renderSvc,
+  bsod:renderBsod, tools:renderTools,
   /* 设置不在这一列 —— 2026-10-13 起它是弹窗（openSettings），不是页面 */
 };
 function buildNav(){
@@ -2426,7 +2394,6 @@ function render(){
      否则重绘出来的按钮全是死的 —— 之前只在 go() 里绑，重绘后就失效了 */
   if(cur==='clean') bindClean();
   if(cur==='tools' && window.bindTools) window.bindTools();
-  if(cur==='svc' && window.bindSvc) window.bindSvc();
   if(cur==='home') bindHomeExtras();
   if(cur==='pcinfo' && window.bindPcinfo) window.bindPcinfo();
   if(cur==='space' && window.bindDisk) window.bindDisk();
@@ -2494,8 +2461,6 @@ function reloadCurrentPage(){
     bsod: function(){ if(window.bsodLoad) window.bsodLoad(); },
     tools: function(){ if(window.tkLoad) window.tkLoad(); },
     pcinfo: function(){ loadPC(); },
-    svc: function(){ if(window.loadSvc) window.loadSvc(); },
-    flow: function(){ loadGuides(); },
     /* 设置不是页面（2026-10-13 起是弹窗）—— F5 时如果它开着，重读设置数据而不是"重读这一页" */
     set: function(){ loadSettings(); },
     about: function(){ if(window.loadAbout) window.loadAbout(); }
@@ -3673,7 +3638,7 @@ function installBindingsFallback(){
   installBindingsFallback().then(function(ok){
     if(!ok) return;
     window.__compat = true;
-    ['loadCatalog','loadHomeDisks','suLoad','loadPendingReboot','loadApps','loadPC','bsodLoad','drvLoad','tkLoad','loadSvc','loadSettings','loadAbout','loadGuides','loadOptCatalog','loadDiskDrives'].forEach(function(fn){
+    ['loadCatalog','loadHomeDisks','suLoad','loadPendingReboot','loadApps','loadPC','bsodLoad','drvLoad','tkLoad','loadSettings','loadAbout','loadOptCatalog','loadDiskDrives'].forEach(function(fn){
       try{ if(typeof window[fn] === 'function') window[fn](); }catch(e){}
     });
     try{ render(); }catch(e){}
@@ -5036,8 +5001,8 @@ function bindClean(){
    主文件只剩 5 处引用：<link>、同步加载器、PAGES.bsod、render() 里的 bindBsod()、
    reloadCurrentPage 与启动预热里的 bsodLoad。 */
 /* ════════════════════════════════════════════════════
-   服务大厅 / 设置 / 关于（真数据 · 2026-10-09 改造）
-   原型这三页问题最集中：服务卡的价格、"已建还原点 7 个"、设置里那排**没接任何东西的假开关**、
+   设置 / 关于（真数据 · 2026-10-09 改造）
+   原型这两页问题最集中：设置里那排**没接任何东西的假开关**、
    编的版本记录与"Windows 11 23H2"（这台其实是 Win10）—— 全部换成后端真数据。
    ════════════════════════════════════════════════════ */
 /* ── 设置（真数据）───────────────────────────────────────────────── */
@@ -5116,10 +5081,20 @@ function askThenDo(title, body, okText, fn){
      所以要先记住"背后那个是不是设置窗"，关掉后再把它画回来 ——
      不然问一句「重置吗」，设置窗就被吃掉了，用户还得重新点齿轮。 */
   const backToSettings = !!window.SetPanel.isOpen();
-  if(backToSettings) SET_ASKING = true;   /* 问话期间不许重画设置窗（见 paintSettings 里的说明） */
+  /* ⚠️ 必须走 window：setpanel.js 是 IIFE 里 eval 载入的，它那个 let SET_ASKING
+     只活在 eval 作用域；主文件裸写 SET_ASKING 会另建一个全局变量，两边对不上，
+     paintSettings() 里的拦截恒 false —— 确认框会被异步回来的数据冲掉。 */
+  if(backToSettings) window.SET_ASKING = true;   /* 问话期间不许重画设置窗（见 paintSettings 里的说明） */
   const dismiss = function(){
-    SET_ASKING = false;
+    window.SET_ASKING = false;
     if(backToSettings){
+      /* 确认框和设置窗共用 #modalBox：取消 / 确定都得把设置窗**原样**画回来。
+         ⚠️ 期间要是被 Esc / 遮罩 / 别的 closeModal 清过 SET_OPEN，refresh() 会被
+            paintSettings 的 if(!SET_OPEN) 挡掉，设置页就"死"在那儿 —— 先兜回来。
+         ⚠️ 宽度是确认框临时改成 470px 的，不还原设置窗会一直卡在窄条里。 */
+      SET_OPEN = true;
+      box.style.width = '';
+      box.classList.add('setbox');
       window.SetPanel.refresh();
       modal.classList.add('open');
     } else {
@@ -5134,8 +5109,9 @@ function askThenDo(title, body, okText, fn){
     + '<div class="modal-f"><button class="btn" id="askNo">取消</button>'
     + '<button class="btn primary" id="askYes">'+ico('check',15)+okText+'</button></div>';
   modal.classList.add('open');
-  document.getElementById('askNo').onclick = function(){ if(done) return; done = true; dismiss(); };
-  document.getElementById('askYes').onclick = go;
+  /* 两个按钮都拦住冒泡：#modal 上任何「点空白就关」的委托，不该把背后设置窗一起关掉 */
+  document.getElementById('askNo').onclick = function(e){ if(e) e.stopPropagation(); if(done) return; done = true; dismiss(); };
+  document.getElementById('askYes').onclick = function(e){ if(e) e.stopPropagation(); go(); };
 }
 
 /* ════════ 软件更新 / 官方原版校验（2026-10-13 新增）════════
@@ -5163,8 +5139,11 @@ function updHtml(){
     line = '<span class="upd-line" style="color:var(--tx3)">正在连更新服务器…</span>';
     tail = '<button class="btn sm" disabled>检查中</button>';
   } else if(s === 'dev'){
-    line = '<span class="upd-line" style="color:var(--tx3)">开发版不检查更新</span>';
-    tail = btn('setUpdCheck', '再查一次');
+    /* 后端 CheckUpdate 看到 appVersion 带 -dev 就直接返回 dev，
+       再点多少次都一样 —— 原来那个「再查一次」是骗人的按钮 */
+    line = '<span class="upd-line" style="color:var(--tx3)">开发版不检查更新</span>'
+      + '<div class="upd-meta" style="color:var(--tx3);white-space:normal">只有正式发布版才会连更新服务器。</div>';
+    tail = '<button class="btn sm" disabled>不适用</button>';
   } else if(s === 'new'){
     line = '<span class="upd-line upd-new">有新版本 '+verLabel(info.latest||'')+'</span>';
     const notes = (info.notes && info.notes.length)
@@ -5213,7 +5192,10 @@ function updHtml(){
     + '</div>';
 }
 
-/* 校验结果那一条。四种结局各有各的说法，尤其"服务器没记录"绝不能写成"校验不通过"。 */
+/* 校验结果那一条。后端 VerifySelf 有 5 种 state：
+   ok / mismatch 是「核对完了」，offline / unknown / dev 是「根本没法核对」。
+   ⚠️ 后三种不能只给一行灰字，更不能标红 —— 自己编译的版本、断网、清单里
+      还没这一版，都不等于「文件被改过」，混在一起会冤枉人。 */
 function vfHtml(){
   const s = VER.state, r = VER.r || {};
   if(s === 'idle') return '';
@@ -5222,7 +5204,14 @@ function vfHtml(){
   let cls = '', pre = '';
   if(r.state === 'ok'){ cls = ' ok'; pre = ico('check',13)+' '; }
   else if(r.state === 'mismatch'){ cls = ' bad'; pre = ico('warn',13)+' '; }
-  else { cls = ''; pre = ''; }
+  else {
+    const why = (r.state === 'offline') ? '没连上官方清单'
+              : (r.state === 'dev') ? '开发版没有官方指纹'
+              : '官方清单里没有这一版的记录';
+    return '<div class="vf-res">'+ico('info',13)+' <b>没能核对</b> · '+escHome(why)
+      + (r.message ? '<div style="margin-top:4px;color:var(--tx3);white-space:normal">'+escHome(r.message)+'</div>' : '')
+      + '</div>';
+  }
   return '<div class="vf-res'+cls+'">'+pre+escHome(r.message || '')+'</div>';
 }
 
@@ -5274,7 +5263,7 @@ function verifySelf(){
   if(SET_OPEN) window.SetPanel.refresh();
   callGo('VerifySelf').then(function(r){
     VER.r = r || {};
-    VER.state = (r && r.state === 'offline') ? 'done' : 'done';
+    VER.state = 'done';   /* 具体是 ok / mismatch / 没能核对，由 vfHtml() 按 r.state 分说 */
     if(SET_OPEN) window.SetPanel.refresh();
   }).catch(function(e){
     VER.state = 'fail';
@@ -5352,7 +5341,6 @@ function cmdItems(){
   const out = [];
   NAV.forEach(function(g){ g.items.forEach(function(i){ out.push({g:'页面',n:i.name,ico:i.ico,a:function(){go(i.id);}}); }); });
   (window.TK ? window.TK.tools : []).forEach(function(t){ out.push({g:'工具 · '+t.cat, n:t.name, ico:'box', a:function(){ if(window.tkJump) window.tkJump(t.id); else if(typeof go === 'function') go('tools'); }}); });
-  out.push({g:'页面',n:'服务大厅',ico:'message',a:function(){go('svc');}});
   out.push({g:'页面',n:'设置',ico:'gear',a:function(){window.SetPanel.open();}});
   out.push({g:'页面',n:'关于',ico:'info',a:function(){window.SetPanel.open('about');}});
   return out;
@@ -5714,14 +5702,28 @@ function openCleanConfirm(sel, hits, aHits, lockers){
 }
 /* 清理执行：沿用雷达动效，滚动显示正在清理哪一项；完成后进完成页 */
 function closeModal(){
-  document.getElementById('modal').classList.remove('open');
+  const m = document.getElementById('modal');
+  if(m) m.classList.remove('open');
   /* 清理确认 / 残留详情这两个弹窗会临时把 modal-box 加宽，关掉就还原，别影响别的弹窗 */
   const b = document.getElementById('modalBox');
   if(b){ b.style.width = ''; b.classList.remove('setbox'); }
+  /* 🔴 设置窗里弹出的确认框：按 Esc / 点遮罩 / 点「返回」，只该关掉这一层，
+     背后的设置窗要原样画回来。以前一律 SET_OPEN=false，设置页就"死"了 ——
+     之后所有 refresh 都被 if(!SET_OPEN) 挡掉，表现就是点完取消设置页出错。 */
+  if(window.SET_ASKING){
+    window.SET_ASKING = false;
+    if(window.SetPanel && typeof window.SetPanel.isOpen === 'function' && window.SetPanel.isOpen()){
+      SET_OPEN = true;
+      if(b) b.classList.add('setbox');
+      window.SetPanel.refresh();
+      if(m) m.classList.add('open');
+      return;
+    }
+  }
   /* 设置也是弹窗（2026-10-13）：不管从哪个路子关掉（ESC / 遮罩 / 按钮），
      都得把"开着"这个状态清掉，否则它还会往一个已经关了的窗里重画 */
   SET_OPEN = false;
-  SET_ASKING = false;
+  window.SET_ASKING = false;
 }
 /* 高亮退场：用户已经点了某一项，或者重新扫/回到 pick 页，就不该再亮着 */
 function clearHl(){
@@ -5827,6 +5829,16 @@ function init(){
   /* 无边框窗口：最小化 / 最大化 / 关闭交给 Wails runtime（浏览器打开时按钮只是装饰） */
   if(window.runtime){
     const wm = document.getElementById('winMin'), wx = document.getElementById('winMax'), wc = document.getElementById('winClose');
+  /* 2026-11-10 临时入口：服务大厅删除后，原「找大叔」按钮统一跳官网服务页。
+     链接取自后端 SvcLinks()，前端不硬编码；最终保留与否由用户后续决定。 */
+  window.openService = function(){
+    callGo('SvcLinks').then(function(l){
+      var u = (l && (l.order || l.site)) || '';
+      if(!u){ toast('没读到服务页地址', 'warn'); return; }
+      if(typeof window.tbOpen === 'function'){ window.tbOpen(u); return; }
+      try{ window.open(u, '_blank', 'noopener'); }catch(_){ toast('打开失败，地址是：' + u, 'warn'); }
+    }).catch(function(e){ toast('服务页地址读取失败：' + String(e), 'warn'); });
+  };
   /* 赞赏：二维码文件放 frontend/dist/zanshang-qr.png 即自动出现（后端 SvcLinks().reward 会给文件名） */
   window.rewardOpen = function(){
     callGo('SvcLinks').then(function(l){
@@ -5855,7 +5867,14 @@ function init(){
   window.tbOpen = function(u){
     if(!u) return;
     try{ window.runtime.BrowserOpenURL(u); }
-    catch(_){ callGo('CopyText', u).then(function(){ toast('已复制链接：' + u, 'ok'); }); }
+    catch(_){
+      /* 拉不起邮件客户端时复制一个 mailto: 链接毫无用处 —— 直接把收件地址说清楚 */
+      if(/^mailto:/i.test(u)){
+        toast('没检测到默认邮件客户端，请手动发到 ' + u.replace(/^mailto:/i, ''), 'warn');
+        return;
+      }
+      callGo('CopyText', u).then(function(){ toast('已复制链接：' + u, 'ok'); });
+    }
   };
   const tbRew = document.getElementById('tbReward');
   if(tbRew){ tbRew.innerHTML = ico('heart',17); tbRew.onclick = function(e){ e.stopPropagation(); window.rewardOpen(); }; }
@@ -5951,7 +5970,7 @@ function initNavTip(){
     if(!b){ tip.classList.remove('show'); return; }
     const name = (b.id === 'collapseBtn') ? '展开侧栏' : (PAGE_NAME[b.dataset.page] || '');
     if(!name){ tip.classList.remove('show'); return; }
-    tip.innerHTML = name + (b.dataset.page === 'svc' ? '<span class="nt-sub">远程修电脑 · 1V1 接单</span>' : '');
+    tip.innerHTML = name;
     tip.classList.add('show');
     const r = b.getBoundingClientRect();
     tip.style.left = (r.right + 12) + 'px';

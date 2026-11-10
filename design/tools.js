@@ -32,9 +32,6 @@ var TK = {
   updates: null, pending: false,
   term: '', termOpen: false, cf: null,   // cf = 危险工具的待确认 {id,arg}
   a1: null, a2: null, a3: null,          // 参数回填（重画窗口时保住已填的值）
-  /* 对症排查（2026-10-13 从右上角菜单那个独立页面搬进来）：
-     症状 → 步骤 → 一键跑工具。跟工具库同源，就放在工具库页顶部，默认收起。 */
-  guides: [], guideState: 'loading', guideErr: '', guideOpen: {}, guideLoading: false, guideFold: true
 };
 window.TK = TK;
 
@@ -193,7 +190,6 @@ function renderTools(){
   /* hero：一句话说明 + 右侧 KPI（数量真从后端目录数，不写死） */
   h += '<div class="tk-hero" id="tkHero">' + tkHeroHtml() + '</div>';
   /* 对症排查：放在 hero 与分类页签之间 —— 一眼看得见，又不把工具墙顶下去 */
-  h += '<div id="tkFlowBox">' + tkFlowHtml() + '</div>';
 
   h += '<div class="tk-tabs" id="tkTabs">' + tkTabsHtml()
     + '<button class="tk-reload" data-tkact="rerun">' + ico('refresh', 13) + '重新读取</button></div>';
@@ -213,85 +209,6 @@ function tkPaintWall(){ var b = tkEl('tkWall'); if(b) b.innerHTML = tkWallHtml()
 function tkPaintReboot(){ var b = tkEl('tkRebootBox'); if(b) b.innerHTML = tkRebootHtml(); }
 function tkPaintMini(){ var b = tkEl('tkMiniBox'); if(b) b.innerHTML = tkMiniHtml(); }
 
-/* ════════ 对症排查（2026-10-13 从独立的「快速排查」页搬进来）════════
-   原来它挂在右上角菜单的 go('flow')，是个谁也不容易发现的隐藏页。
-   右上角菜单整个删掉后搬到这里：症状清单本质就是「不知道该用哪个工具 → 照着做 →
-   一键执行」，和工具库同源，放工具库页顶部最顺。
-   ⚠️ 默认**收起**（guideFold）：工具库本身已经很长，铺开会把下面的工具墙顶到屏幕外。
-   展开/收起、每条症状的展开都只重画 #tkFlowBox 这一个盒子 —— 整页 render 会吞点击。 */
-function tkGuideName(id){
-  for(var i = 0; i < TK.tools.length; i++){ if(TK.tools[i].id === id) return TK.tools[i].name; }
-  return id;
-}
-function tkLoadGuides(){
-  if(TK.guideLoading) return;
-  if(!hasGo()){ TK.guideState = 'failed'; TK.guideErr = '后端连接还没就绪（window.go 为空）'; tkPaintFlow(); return; }
-  TK.guideLoading = true; TK.guideState = 'loading'; TK.guideErr = '';
-  callGo('GetGuides').then(function(l){
-    TK.guideLoading = false; TK.guides = l || []; TK.guideState = 'ready'; tkPaintFlow();
-  }).catch(function(e){
-    TK.guideLoading = false; TK.guideState = 'failed'; TK.guideErr = String(e); tkPaintFlow();
-  });
-}
-function tkFlowAct(g){
-  if(g.toolId){
-    for(var i = 0; i < TK.tools.length; i++){ if(TK.tools[i].id === g.toolId){ tkJump(g.toolId); return; } }
-    /* 工具目录还没到 / 这台机器没这个工具：明说，别假装能跑 */
-    toast('工具库里没有「' + tkGuideName(g.toolId) + '」这个工具，先在下面找找看', 'warn');
-    return;
-  }
-  if(g.pageId){ if(typeof go === 'function') go(g.pageId); return; }
-  toast('这一条没有一键动作，照着上面的步骤做即可', 'info');
-}
-function tkFlowHtml(){
-  var h = '<div class="tk-flow">'
-    + '<div class="tk-flow-h" data-flfold="1">'
-    +   '<span class="tk-flow-ico">' + ico('sparkle', 15) + '</span>'
-    +   '<b>对症排查</b>'
-    +   '<span class="tk-flow-n">'
-    +     (TK.guideState === 'ready' ? (TK.guides.length + ' 个症状') : (TK.guideState === 'failed' ? '没读到' : '读取中…'))
-    +   '</span>'
-    +   '<span style="margin-left:auto"></span>'
-    +   '<span class="tk-flow-x">' + (TK.guideFold ? '展开' : '收起') + '</span>'
-    + '</div>';
-  if(TK.guideFold) return h + '</div>';
-
-  if(TK.guideState === 'failed'){
-    return h + '<div class="tk-flow-b"><div class="tk-flow-err">没能读到自查清单：' + tkEsc(TK.guideErr) + '</div>'
-      + '<button class="btn sm" data-flretry="1">' + ico('refresh', 13) + '重新读取</button></div></div>';
-  }
-  if(TK.guideState !== 'ready'){
-    return h + '<div class="tk-flow-b"><div class="tk-flow-err">正在读自查清单…</div></div></div>';
-  }
-  if(!TK.guides.length){
-    return h + '<div class="tk-flow-b"><div class="tk-flow-err">后端没有给自查清单。不影响使用，直接在下面按名字找工具就行。</div></div></div>';
-  }
-  h += '<div class="tk-flow-b">' + TK.guides.map(function(g){
-    var open = !!TK.guideOpen[g.id];
-    var act = g.toolId ? ('一键：' + tkGuideName(g.toolId)) : (g.pageId ? (g.actLabel || '去处理') : '');
-    return '<div class="tk-flow-i">'
-      + '<div class="tk-flow-t' + (act ? ' hasact' : '') + '" data-fltog="' + tkEsc(g.id) + '">'
-      +   '<b>' + tkEsc(g.title) + '</b>'
-      +   '<span class="chip">' + ((g.steps || []).length) + ' 步</span>'
-      +   '<span style="margin-left:auto"></span>'
-      +   (act ? ('<button class="btn sm primary" data-flact="' + tkEsc(g.id) + '">' + tkEsc(act) + '</button>') : '')
-      +   '<span class="tk-flow-x">' + (open ? '收起' : '展开') + '</span>'
-      + '</div>'
-      + (open ? ('<div class="tk-flow-s">'
-          + (g.steps || []).map(function(s, i){
-              return '<div class="tk-flow-step"><span>' + (i + 1) + '.</span><span>' + tkEsc(s) + '</span></div>';
-            }).join('')
-          + (g.article ? ('<div class="tk-flow-art">相关文章：'
-              + '<button class="btn sm" data-flart="' + tkEsc(g.article) + '" data-arttitle="' + tkEsc(g.articleTitle || '') + '">'
-              + tkEsc(g.articleTitle || g.article) + '（复制链接）</button></div>') : '')
-          + '</div>') : '')
-      + '</div>';
-  }).join('') + '</div></div>';
-  return h;
-}
-function tkPaintFlow(){ var b = tkEl('tkFlowBox'); if(b) b.innerHTML = tkFlowHtml(); }
-/* 探针与调试要用：模块在 eval 作用域里，外面够不着 tkPaintFlow（2026-10-13） */
-window.tkPaintFlow = tkPaintFlow;
 
 /* ── hero：一句话说明 + 右侧 KPI（数量 = 后端目录实数值） ───────────────── */
 function tkHeroHtml(){
@@ -727,26 +644,10 @@ function bindTools(){
   /* 进页补加载：只靠启动那次预热不够（预热时后端绑定可能还没注入，等于空跑）。
      数据没到就再拉一次 —— 别的模块都是这么兜的，工具库之前漏了。 */
   if(TK.state !== 'ready' && !TK.loading) tkLoad();
-  /* 症状清单单独拉（跟工具目录不是一个后端方法），进页补一次 */
-  if(TK.guideState !== 'ready' && !TK.guideLoading) tkLoadGuides();
 }
 window.bindTools = bindTools;
 
 function tkHandle(ds){
-  /* ── 对症排查 ── */
-  if('flfold' in ds){ TK.guideFold = !TK.guideFold; tkPaintFlow(); return true; }
-  if(ds.fltog){ TK.guideOpen[ds.fltog] = !TK.guideOpen[ds.fltog]; tkPaintFlow(); return true; }
-  if(ds.flact){
-    for(var fi = 0; fi < TK.guides.length; fi++){ if(TK.guides[fi].id === ds.flact){ tkFlowAct(TK.guides[fi]); break; } }
-    return true;
-  }
-  if('flart' in ds){
-    callGo('CopyText', ds.flart).then(function(m){
-      toast(m ? ('复制失败：' + m) : ('文章链接已复制：' + (ds.arttitle || '')), m ? 'warn' : 'ok');
-    }).catch(function(err){ toast('复制失败：' + err, 'warn'); });
-    return true;
-  }
-  if('flretry' in ds){ TK.guideLoading = false; tkLoadGuides(); return true; }
   if(ds.tkcat){
     TK.cat = ds.tkcat;
     tkPaintTabs(); tkPaintWall();
