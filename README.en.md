@@ -4,6 +4,8 @@
 
 A portable Windows cleaner and optimizer in a single 15 MB executable. Clear junk files, switch off the settings that slow Windows down, uninstall apps and sweep up what they leave behind, see what is actually eating your disk, back up driver packages, read blue-screen crash dumps, and run 32 built-in repair tools — all from one window.
 
+> ⚠️ **Heads-up:** the program is not code-signed, so some antivirus tools may flag and quarantine it as a false positive. Whitelist it (or temporarily disable your AV) before first run.
+
 - **93 cleanup targets in 9 groups**, including AI app caches and dead registry entries
 - **156 system tweaks**, each one reversible on its own
 - **32 repair tools**, grouped by the problem you are trying to solve rather than by command
