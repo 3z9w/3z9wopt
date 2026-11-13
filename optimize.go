@@ -56,10 +56,12 @@ type OptItemStatus struct {
 }
 
 type OptResult struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	OK   bool   `json:"ok"`
-	Err  string `json:"err"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	OK       bool   `json:"ok"`
+	Err      string `json:"err"`
+	Warn     string `json:"warn,omitempty"`     // 非致命提示：例如旧版本项没有操作前快照，只能恢复默认值
+	Rollback string `json:"rollback,omitempty"` // not_needed / succeeded / failed：失败后自动回退的真实结果
 }
 
 // ---------- 注册表路径解析 ----------
@@ -331,21 +333,9 @@ func execRegDelete(a OptAction) error {
 		}
 		return nil
 	}
-	// Value 为空 = 删整个键：在父键上 DeleteKey(叶子名)
-	i := strings.LastIndex(sub, `\`)
-	if i < 0 {
-		return fmt.Errorf("无法定位父键: %s", a.Key)
-	}
-	parent, leaf := sub[:i], sub[i+1:]
-	k, err := registry.OpenKey(root, parent, registry.SET_VALUE|registry.ENUMERATE_SUB_KEYS)
-	if err != nil {
-		if err == registry.ErrNotExist {
-			return nil
-		}
-		return err
-	}
-	defer k.Close()
-	if err := registry.DeleteKey(k, leaf); err != nil && err != registry.ErrNotExist {
+	// Value 为空 = 删整个键（含子键）。用递归删除，和快照的回滚能力保持一致；
+	// registry.DeleteKey 只能删空键，遇到子键会失败。
+	if err := deleteRegKeyTree(root, sub); err != nil && err != registry.ErrNotExist {
 		return err
 	}
 	return nil
@@ -380,7 +370,9 @@ func setServiceStart(name string, start uint32) error {
 	}
 	if delayed {
 		var b uint32 = 1 // SERVICE_CONFIG_DELAYED_AUTO_START_INFO = 3
-		procChangeSvcCfg2.Call(s, 3, uintptr(unsafe.Pointer(&b)))
+		if r, _, e := procChangeSvcCfg2.Call(s, 3, uintptr(unsafe.Pointer(&b))); r == 0 {
+			return fmt.Errorf("设置服务 %s 延迟启动失败: %v", name, e)
+		}
 	}
 	return nil
 }
@@ -488,29 +480,25 @@ func (a *App) runOptimize(ids []string, restore bool) []OptResult {
 			continue
 		}
 		a.emit("opt:progress", done, total, it.Name, it.ID)
-		acts := it.Optimize
+		// 应用与还原都走快照语义：
+		//   应用 = 先记录操作前状态，再执行；失败自动回退本项已改的部分。
+		//   还原 = 优先按快照回到应用前，找不到快照才退回写死的 Restore（默认值）。
+		var res OptResult
 		if restore {
-			acts = it.Restore
-		}
-		res := OptResult{ID: it.ID, Name: it.Name, OK: true}
-		if len(acts) == 0 {
-			res.OK, res.Err = false, "该项没有定义动作"
-		}
-		for _, act := range acts {
-			if ctx.Err() != nil {
-				res.OK, res.Err = false, "已停止"
-				break
-			}
-			if err := execOptAction(ctx, act); err != nil {
-				res.OK, res.Err = false, err.Error()
-				break // 一条失败就停该项：后面的动作多半依赖前面的结果
-			}
+			res = restoreOptItem(ctx, it)
+		} else {
+			res = applyOptItem(ctx, it)
 		}
 		results = append(results, res)
 		done++
 		cleanTrace(fmt.Sprintf("  opt %s ok=%v err=%q", res.ID, res.OK, res.Err))
 		a.emit("opt:progress", done, total, "", "")
 	}
+	kind := "optimize"
+	if restore {
+		kind = "revert"
+	}
+	logOptimize(kind, results)
 	return results
 }
 

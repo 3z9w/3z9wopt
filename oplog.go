@@ -100,13 +100,16 @@ func logOptimize(kind string, res []OptResult) {
 		known[optCatalog[i].ID] = &optCatalog[i]
 	}
 	var items []string
-	ok, fail := 0, 0
+	ok, fail, warn := 0, 0, 0
 	errTxt := ""
 	rb := false
 	for _, r := range res {
 		if r.OK {
 			ok++
 			items = append(items, r.Name)
+			if r.Warn != "" {
+				warn++
+			}
 			if it, has := known[r.ID]; has && itemNeedsReboot(it) {
 				rb = true
 			}
@@ -119,7 +122,10 @@ func logOptimize(kind string, res []OptResult) {
 	}
 	title := "应用 " + itoa(ok) + " 项系统优化"
 	if kind == "revert" {
-		title = "撤销 " + itoa(ok) + " 项优化，恢复系统默认"
+		title = "撤销 " + itoa(ok) + " 项优化，恢复操作前状态"
+		if warn > 0 {
+			title = "撤销 " + itoa(ok) + " 项优化，其中 " + itoa(warn) + " 项有还原提示"
+		}
 	}
 	appendOpLog(OpLogEntry{
 		Kind: kind, Title: title, Items: items,
