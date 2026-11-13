@@ -241,7 +241,7 @@ func TestIsDirCleanItem(t *testing.T) {
 		t.Error("没有 Cmd 的目录项应算目录型")
 	}
 	for _, cmd := range []string{
-		"recycle", "vss", "evtx", "winold", "cleanmgr", "brokenappx", "iconrefresh",
+		"recycle", "cleanmgr", "brokenappx", "iconrefresh",
 		"reg:mui", "reg:apppath", "reg:uninst", "reg:clsid", "reg:shared",
 		"reg:runmru", "reg:typedpaths", "reg:opensave", "reg:officemru", "badlnk",
 	} {

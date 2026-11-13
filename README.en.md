@@ -2,11 +2,11 @@
 
 **English** · [简体中文](README.md)
 
-A portable Windows cleaner and optimizer in a single 15 MB executable. Clear junk files, switch off the settings that slow Windows down, uninstall apps and sweep up what they leave behind, see what is actually eating your disk, back up driver packages, read blue-screen crash dumps, and run 34 built-in repair tools — all from one window.
+A portable Windows cleaner and optimizer in a single 15 MB executable. Clear junk files, switch off the settings that slow Windows down, uninstall apps and sweep up what they leave behind, see what is actually eating your disk, back up driver packages, read blue-screen crash dumps, and run 32 built-in repair tools — all from one window.
 
 - **93 cleanup targets in 9 groups**, including AI app caches and dead registry entries
-- **154 system tweaks**, each one reversible on its own
-- **34 repair tools**, grouped by the problem you are trying to solve rather than by command
+- **156 system tweaks**, each one reversible on its own
+- **32 repair tools**, grouped by the problem you are trying to solve rather than by command
 - **No installer, no telemetry, no account** — unzip and run
 
 ![Overview → Junk cleanup → System optimizer → Startup manager → Disk space → Hardware info](docs/img/demo.gif)
@@ -46,10 +46,10 @@ Finds the temp files, caches, logs and traces left behind by Windows, browsers a
 - **Temp files (4)** — user temp, system temp, recent items, broken shortcuts
 - **Recycle bin (1)** — every drive
 - **System cache (10)** — Windows Update and Delivery Optimization, Prefetch, DirectX shaders, thumbnails and icons, fonts, search index, WinSxS temp, RDP, .NET assemblies
-- **Deep clean (9)** — WinSxS components (with `/ResetBase`), Defender quarantine, Windows.old, restore points, Installer patch cache, Office install sources, extracted driver leftovers, broken app packages, stray files across all drives
-- **Logs and registry (12)** — WER, crash dumps, event logs, IIS logs, diagnostic data, dead MuiCache / App Paths / SharedDLLs links, keys left by uninstalled software, invalid COM registrations
-- **Browser cache (7)** — Edge, Edge AI components, Chrome, Firefox, IE, other Chromium browsers, cookies
-- **App cache (26)** — WPS, Office, Adobe, QQ / WeChat / DingTalk, Thunder, cloud drives, Steam, VS Code, JetBrains, Discord, Zoom, NetEase Cloud Music, Douyin Live Studio, and more discovered automatically
+- **Deep clean (6)** — WinSxS components (with `/ResetBase`), Installer patch cache, Office install sources, extracted driver leftovers, broken app packages, stray files across all drives
+- **Logs and registry (11)** — WER, crash dumps, IIS logs, diagnostic data, dead MuiCache / App Paths / SharedDLLs links, keys left by uninstalled software, invalid COM registrations
+- **Browser cache (9)** — Edge, Edge AI components, Chrome, Firefox, IE, other Chromium browsers, cookies, browser update leftovers, old version folders
+- **App cache (27)** — WPS, Office, Adobe, QQ / WeChat / DingTalk, Thunder, cloud drives, Steam, VS Code, JetBrains, Discord, Zoom, NetEase Cloud Music, Douyin Live Studio, and more discovered automatically
 - **AI app cache (19)** — Doubao, Jianying, Kimi, Yuanbao, Tongyi, Ernie, Jimeng, ChatGPT, Claude, Cursor, Trae, DeepSeek, WorkBuddy, plus **local LLM weights** (Ollama / LM Studio — often several GB)
 - **Usage traces (5)** — Run box, address bar, Office recent documents, open/save dialogs, browser history
 
@@ -63,19 +63,19 @@ Finds the temp files, caches, logs and traces left behind by Windows, browsers a
 
 Turns off the switches in Windows that slow it down, push ads, or collect data. Anything you turn off can be turned back on, and every change stays in the log.
 
-**154 tweaks in 7 categories:**
+**156 tweaks in 7 categories:**
 
-- **Performance (45)** — process count, shutdown and service-stop waits, SysMain / Windows Search / Error Reporting, large system cache, non-paged kernel memory
-- **Privacy (34)** — activity history, advertising ID, diagnostic data, typing and writing habits, plus telemetry in .NET, PowerShell and the system itself
-- **Appearance / Explorer (32)** — taskbar, Start menu recommendations, Notepad, file extensions, restart apps after a crash
-- **System settings (14)** — hibernation, power off USB on eject, auto-restart on BSOD, disk check timeout
+- **Performance (44)** — process count, shutdown and service-stop waits, SysMain / Windows Search / Error Reporting, large system cache, non-paged kernel memory
+- **Privacy (35)** — activity history, advertising ID, diagnostic data, typing and writing habits, plus telemetry in .NET, PowerShell and the system itself
+- **Appearance / Explorer (33)** — taskbar, Start menu recommendations, Notepad, file extensions, restart apps after a crash
+- **System settings (16)** — hibernation, power off USB on eject, auto-restart on BSOD, disk check timeout
 - **Edge (12)** — first-run page, background running, startup boost, Bing search ads
 - **Windows Update (7)** — driver updates, feature updates, Malicious Software Removal Tool
-- **Security (10)** — UAC, SmartScreen, firewall, memory integrity, virtualization-based security
+- **Security (9)** — UAC, SmartScreen, firewall, memory integrity, virtualization-based security
 
 **Also worth knowing:**
 
-- **Basic preset (87 items) / Deep preset (127 items)**, or skip presets and tick items yourself
+- **Basic preset (84 items) / Deep preset (122 items)**, or skip presets and tick items yourself
 - **Every item has its own switch and its own undo** — you can stop halfway, or roll back just one item
 - **Each item is marked as needing a reboot or not** — one-click optimize only ticks what actually measured slow on this machine, and you can untick any of it in the dialog
 
@@ -129,7 +129,7 @@ No WinDbg, no symbol server. Reads crash dumps directly and gives you the bug ch
 
 No internet, printer won't print, update won't install, Windows won't boot — the problems you actually hit. No need to remember which command to type.
 
-- **34 tools in 7 problem-based categories** — connectivity, updates, system errors, boot, disks, system info, everyday utilities
+- **32 tools in 7 problem-based categories** — connectivity, updates, system errors, boot, disks, system info, everyday utilities
 - **Runs in the window** — live output, stop any time; tools that change the system take a backup, a restore point or a reboot reminder, and show exactly what they changed
 - **Guided troubleshooting** — 10 symptoms (slow boot, full C drive, blue screen, no sound, no internet, printer or share unreachable…); pick one and it takes you to the right tool
 
@@ -145,7 +145,7 @@ Taken from v1.1.0; light and dark themes both available.
 
 | Junk cleanup | System optimizer |
 | --- | --- |
-| ![Junk cleanup: 9 groups, 93 targets](docs/img/shot-clean.jpg) | ![System optimizer: 154 tweaks](docs/img/shot-optimize.jpg) |
+| ![Junk cleanup: 9 groups, 93 targets](docs/img/shot-clean.jpg) | ![System optimizer: 156 tweaks](docs/img/shot-optimize.jpg) |
 
 | App uninstaller | Disk space |
 | --- | --- |
@@ -155,9 +155,9 @@ Taken from v1.1.0; light and dark themes both available.
 | --- | --- |
 | ![Startup manager: five native mechanisms](docs/img/shot-startup.jpg) | ![Drivers: export by category](docs/img/shot-driver.jpg) |
 
-**Toolbox** — 34 tools in 7 problem-based categories, with the guided-troubleshooting list at the top.
+**Toolbox** — 32 tools in 7 problem-based categories, with the guided-troubleshooting list at the top.
 
-![Toolbox: guided troubleshooting plus 34 tools](docs/img/shot-tools.jpg)
+![Toolbox: guided troubleshooting plus 32 tools](docs/img/shot-tools.jpg)
 
 ## Download and install
 

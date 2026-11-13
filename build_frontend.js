@@ -3,7 +3,7 @@
 const fs = require('fs');
 const src = fs.readFileSync('design/ui-prototype.html', 'utf8');
 const out = src
-  .replace('<title>3z9wOpt v1.1.0 · UI 原型</title>', '<title>无名大叔系统优化工具箱 v1.1.0</title>');
+  .replace('<title>3z9wOpt v1.2.0 · UI 原型</title>', '<title>无名大叔系统优化工具箱 v1.2.0</title>');
 fs.mkdirSync('frontend/dist', { recursive: true });
 fs.writeFileSync('frontend/dist/index.html', out, 'utf8');
 console.log('frontend/dist/index.html', (out.length / 1024).toFixed(1) + ' KB');

@@ -42,6 +42,8 @@ function abOnPage(){ return !!document.querySelector('[data-abpage]'); }
 
 function abAfter(){
   if(abOnPage() && typeof render === 'function') render();
+  /* 2026-11-13 方案四：版本号到了，把侧栏底部「关于本软件」卡的版本行也补上 */
+  if(typeof window.paintSideVer === 'function') window.paintSideVer();
   /* 设置弹窗里那个「关于」面板也吃这份数据 —— 走 window.setIsOpen 这个桥，
      不直接摸主文件的 let SET_OPEN（那是 let 声明的，不挂 window，够不着也不该够）。 */
   if(window.setIsOpen && window.setIsOpen() && typeof paintSettings === 'function') paintSettings();
@@ -92,7 +94,7 @@ window.renderAboutPane = renderAboutPane;
 
 function abBodyHtml(){
   var a = AB.info || {};
-  var ver = a.version || 'v1.1.0';
+  var ver = a.version || 'v1.2.0';
   var bd = (a.buildDate && a.buildDate !== 'unknown') ? a.buildDate : '';
   /* 构建号（20261019.2）比日期精确：同一天可能发好几次，日期分不出来。
      有构建号就用它，没有（日常构建）才退回日期。 */
@@ -102,13 +104,19 @@ function abBodyHtml(){
   var wxQr = a.wxQr || a.wxGroupQr || '';
   var qq = a.qq || '', qqQr = a.qqQr || '';
 
+  /* 2026-11-13 用户拍板（方案一）：动作区砍成 4 键，每键一个独立去处 ——
+     访问官网（www.3z9w.com）/ 下载新版（opt.3z9w.com 发布页）/ GitHub 仓库 / 赞赏。
+     「发布页」改名「下载新版」（原名字用户看不懂）；「远程服务」删除 —— 老报修页已废，
+     指官网又跟「访问官网」重复，找服务的人走正下方微信 / QQ 二维码更直接。
+     主高亮（primary）从远程服务挪给「下载新版」。 */
   var acts = '<button class="btn sm" data-abact="site">' + abIco('globe', 13) + '访问官网</button>'
-    + '<button class="btn sm" data-abact="publish">' + abIco('box', 13) + '发布页</button>'
+    + '<button class="btn sm primary" data-abact="publish">' + abIco('down', 13) + '下载新版</button>'
     + '<button class="btn sm" data-abact="github">' + abIco('box', 13) + 'GitHub 仓库</button>';
-  if(typeof openPraise === 'function'){
+  /* 2026-11-13 修存量 bug：这里原来判的是 openPraise，但真源里函数叫 rewardOpen ——
+     名字对不上，赞赏按钮从来没渲染出来过。改成判 rewardOpen。 */
+  if(typeof window.rewardOpen === 'function'){
     acts += '<button class="btn sm" data-abact="praise">' + abIco('heart', 13) + '赞赏支持</button>';
   }
-  acts += '<button class="btn sm primary" data-abact="svc">' + abIco('message', 13) + '远程服务</button>';
 
   var qrBox = function(src, alt){
     if(!src) return '';
@@ -160,8 +168,7 @@ function abClick(e){
   if(act === 'site') abOpen(a.site || 'https://www.3z9w.com');
   else if(act === 'publish') abOpen(a.publish || a.site || 'https://opt.3z9w.com/');
   else if(act === 'github') abOpen(a.github || 'https://github.com/3z9w/3z9wopt');
-  else if(act === 'praise'){ if(typeof openPraise === 'function') openPraise(); }
-  else if(act === 'svc'){ if(typeof window.openService === 'function') window.openService(); }
+  else if(act === 'praise'){ if(typeof window.rewardOpen === 'function') window.rewardOpen(); }
   else if(act === 'copywx') abCopy(a.wxid || 'RESBJD', '微信号已复制，去微信添加好友吧');
   else if(act === 'copyqq') abCopy(a.qq || '', 'QQ 群号已复制，去 QQ 搜索群号加群');
   else if(act === 'retry'){ AB.state = 'loading'; loadAbout(); if(typeof render === 'function') render(); }

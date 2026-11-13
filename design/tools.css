@@ -214,3 +214,76 @@
 .tk-flow-step{display:flex;gap:9px;font-size:12.5px;color:var(--tx2);line-height:1.7;margin-bottom:5px}
 .tk-flow-step span:first-child{flex:0 0 16px;color:var(--tx3)}
 .tk-flow-art{font-size:12px;color:var(--tx3);margin-top:8px}
+
+/* ── 测速 HUD（2026-11-12 改版：说明文字全删，版面让给数据；跑动中脉冲/流光，结论横幅重点显示）。
+      纯前端渲染，不联网、不引脚本 —— 误报面零影响。
+      注意：HUD 的 DOM 只在 phase 变化时重建（tools.js tkOnSpeed），数值走文本节点更新，
+      否则这些 CSS 动画每秒被打断一次，一卡一卡的。 ── */
+.tk-sp{padding:0}
+.tk-sp-wrap{position:relative;padding:16px 14px 12px;border-radius:var(--r2);border:1px solid var(--stroke-2);
+  overflow:hidden;background:var(--glass-hi)}
+/* 跑动中：背景光晕呼吸 */
+.tk-sp-run::before{content:'';position:absolute;inset:-40%;
+  background:radial-gradient(45% 55% at 30% 15%,rgba(61,107,245,.20),transparent 70%),
+             radial-gradient(40% 50% at 80% 85%,rgba(34,211,238,.14),transparent 70%);
+  animation:tkSpBreath 2.6s ease-in-out infinite;pointer-events:none}
+@keyframes tkSpBreath{0%,100%{opacity:.55;transform:rotate(0deg)}50%{opacity:1;transform:rotate(6deg)}}
+/* 跑完：光晕定格收束 */
+.tk-sp-done::before{content:'';position:absolute;inset:-40%;
+  background:radial-gradient(45% 55% at 30% 15%,rgba(61,107,245,.14),transparent 70%);pointer-events:none}
+.tk-sp-grid{position:relative;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.tk-sp-big{flex:0 1 auto;min-width:126px}
+.tk-sp-big b{font-size:36px;font-weight:750;color:var(--tx1);line-height:1.05;
+  font-variant-numeric:tabular-nums;letter-spacing:-.6px}
+.tk-sp-run .tk-sp-big b{animation:tkSpPulse 1.15s ease-in-out infinite;
+  background:linear-gradient(90deg,#7aa2ff,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+@keyframes tkSpPulse{0%,100%{opacity:.85;filter:drop-shadow(0 0 0 rgba(61,107,245,0)) }
+  50%{opacity:1;filter:drop-shadow(0 0 7px rgba(61,107,245,.55))}}
+.tk-sp-done .tk-sp-big b{animation:tkSpPop .5s cubic-bezier(.2,.9,.3,1.4)}
+@keyframes tkSpPop{0%{transform:scale(.72);opacity:0}100%{transform:scale(1);opacity:1}}
+.tk-sp-big em{font-style:normal;font-size:11px;color:var(--tx3);margin-left:4px}
+.tk-sp-lab{font-size:11px;color:var(--tx3);margin-top:3px}
+.tk-sp-tiles{position:relative;flex:1 1 320px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.tk-sp-tiles div{padding:5px 6px;border-radius:8px;text-align:center;
+  background:var(--glass);border:1px solid var(--stroke)}
+.tk-sp-tiles span{display:block;font-size:10px;color:var(--tx3)}
+.tk-sp-tiles b{display:block;font-size:12.5px;font-weight:650;color:var(--tx2);line-height:1.45;
+  font-variant-numeric:tabular-nums}
+/* 进度条：跑动中流光滚动 */
+.tk-sp-bar{position:relative;height:6px;border-radius:var(--r4);background:var(--glass);
+  border:1px solid var(--stroke);overflow:hidden;margin-top:10px}
+.tk-sp-bar i{display:block;height:100%;width:0;transition:width .5s var(--e1);
+  background:linear-gradient(90deg,#3d6bf5 0%,#22d3ee 50%,#3d6bf5 100%);background-size:200% 100%}
+.tk-sp-run .tk-sp-bar i{animation:tkSpFlow 1.1s linear infinite}
+@keyframes tkSpFlow{0%{background-position:0% 0}100%{background-position:-200% 0}}
+/* 结论横幅：整段结论重点显示（渐变描边 + 辉光 + 弹入） */
+.tk-sp-verdict{position:relative;display:flex;align-items:center;gap:10px;margin-top:10px;
+  padding:10px 12px;border-radius:10px;font-size:14px;font-weight:700;color:var(--tx1);line-height:1.5;
+  background:linear-gradient(180deg,rgba(61,107,245,.16),rgba(34,211,238,.10));
+  border:1px solid rgba(61,107,245,.45);
+  box-shadow:0 0 0 1px rgba(61,107,245,.12),0 6px 22px rgba(61,107,245,.18),inset 0 1px 0 rgba(255,255,255,.06);
+  animation:tkSpPop .55s cubic-bezier(.2,.9,.3,1.35)}
+.tk-sp-verdict svg{flex:none;color:#22d3ee;filter:drop-shadow(0 0 5px rgba(34,211,238,.6))}
+.tk-sp-verdict span{font-variant-numeric:tabular-nums}
+.tk-sp-foot{position:relative;font-size:10.5px;color:var(--tx3);line-height:1.55;margin-top:7px}
+.tk-sp-foot b{color:var(--tx2);font-weight:620}
+/* 大按钮：未开始时居中（呼吸光环），跑完后小号「重新测速」 */
+.tk-sp-idle{display:flex;align-items:center;justify-content:center;min-height:180px}
+.tk-sp-go{position:relative;display:inline-flex;align-items:center;gap:10px;border:none;cursor:pointer;
+  padding:14px 30px;border-radius:999px;font-size:15px;font-weight:700;font-family:inherit;
+  color:#fff;background:linear-gradient(135deg,#3d6bf5,#22d3ee);
+  box-shadow:0 6px 20px rgba(61,107,245,.35);
+  transition:transform .18s var(--e1),box-shadow .18s var(--e1)}
+.tk-sp-go:hover{transform:translateY(-2px);box-shadow:0 10px 28px rgba(61,107,245,.5)}
+.tk-sp-go:active{transform:translateY(0)}
+.tk-sp-go::after{content:'';position:absolute;inset:-4px;border-radius:999px;
+  border:1.5px solid rgba(61,107,245,.55);animation:tkSpRing 2s ease-out infinite;pointer-events:none}
+@keyframes tkSpRing{0%{opacity:.9;transform:scale(.97)}70%{opacity:0;transform:scale(1.13)}100%{opacity:0}}
+.tk-sp-go.sm{padding:8px 18px;font-size:12.5px;margin-top:10px}
+.tk-sp-go.sm svg{opacity:.9}
+/* 浅色主题：跑动中的渐变数字加深一档，白底上才够醒目（2026-11-12 浅色实拍校对） */
+html[data-theme="light"] .tk-sp-run .tk-sp-big b{
+  background:linear-gradient(90deg,#2b5be0,#0e9db8);-webkit-background-clip:text;background-clip:text}
+/* 浅色主题：跑动中的渐变数字加深一档，白底上才够醒目（2026-11-12 浅色实拍校对） */
+html[data-theme="light"] .tk-sp-run .tk-sp-big b{
+  background:linear-gradient(90deg,#2b5be0,#0e9db8);-webkit-background-clip:text;background-clip:text}

@@ -114,6 +114,12 @@ func (a *App) GetJunkCatalog() []JunkItem {
 			}
 			items[i].Empty = !ok
 		}
+		// gofind / find 声明项：数据根发现引擎找得到 → 装了（哪怕不在默认路径）→ 不隐藏。
+		// finder 结果进程内缓存，这里每次只查表（2026-11-12：自定义安装路径兜底）。
+		if (len(items[i].gofind) > 0 && hasFinderResults(items[i].gofind)) ||
+			(len(items[i].finds) > 0 && hasFindSpecResults(items[i].finds)) {
+			items[i].Empty = false
+		}
 	}
 	return items
 }

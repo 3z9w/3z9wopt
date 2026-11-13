@@ -4,16 +4,14 @@ package main
 // 新增/修改工具：在 init() 里加一条 regTool(...)，详见 toolkit.go 顶部的扩展手册。
 //
 // 2026-09-21 整合：原先分散的十余个网络修复项（清代理 / 刷新 DNS / 清 ARP /
-// 重置 Winsock、TCP/IP / 重置 Hosts / 同步时间 / 重启网卡 / 网络详情 / 续租 IP）
+// 重置 Winsock、TCP/IP / 同步时间 / 重启网卡 / 网络详情 / 续租 IP）
 // 已全部并入「网络修复」这一张卡片的集成面板，作为它的子动作由 toolNetSmart
 // 按参数分派，不再各自单独注册成工具 —— 界面上不再出现一堆功能重复的卡片。
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,11 +43,10 @@ func init() {
 
 	regTool(ToolItem{
 		ID: "net-speed", Cat: "net", Name: "宽带测速",
-		Desc: "下载 / 上传带宽 + 延迟抖动丢包，自动挑最快节点，实时速度曲线",
-		Cmd:  "多线程并发测速（内置国内镜像 + Cloudflare 节点）", Risk: "safe", Long: true, Timeout: 120,
+		Desc: "", Cmd: "", Risk: "safe", Long: true, Timeout: 120,
 		Recommend: true,
 		ArgKind:   "speedtest",
-		Note:      "测速会消耗几十 MB 流量；用 WiFi 建议靠近路由器，测速时别同时下载东西，结果才准。",
+		Note:      "",
 	}, toolImpl{Run: toolSpeedTest})
 
 	regTool(ToolItem{
@@ -76,17 +73,10 @@ func init() {
 		Cmd:  "netstat -ano + 进程反查", Risk: "readonly", OutText: true, Timeout: 60,
 		ArgKind: "text", ArgLabel: "端口", ArgHint: "留空 = 列出所有监听端口，例如 8080",
 	}, toolImpl{Run: toolNetPort})
-
-	regTool(ToolItem{
-		ID: "net-hosts", Cat: "net", Name: "Hosts 文件编辑",
-		Desc: "打开 hosts 文件（屏蔽域名 / 本地调试），改动前自动备份",
-		Cmd:  `备份 + 打开 %windir%\System32\drivers\etc\hosts`, Risk: "caution", Danger: true, Timeout: 60,
-		Note: "保存后可能需执行「DNS 缓存刷新」才生效。",
-	}, toolImpl{Run: toolNetHosts})
 }
 
 // ---- 网络修复面板：按子动作分派（前端传进来的 arg） ----
-// 子动作：all(一键) / proxy / dns / arp / winsock / tcpip / hosts / time / nic / show
+// 子动作：all(一键) / proxy / dns / arp / winsock / tcpip / time / nic / show
 func toolNetSmart(tc *toolCtx) (int, string) {
 	act := strings.TrimSpace(tc.arg)
 	if act == "" {
@@ -122,8 +112,6 @@ func toolNetSmart(tc *toolCtx) (int, string) {
 		code, msg := runSteps(tc, []toolStep{{exe: "netsh.exe", args: []string{"int", "ip", "reset"}}})
 		netSmartReboot(tc, code, "重置 TCP/IP", "TCP/IP 协议栈已重置，建议重启后生效")
 		return code, msg
-	case "hosts":
-		return netHostsReset(tc)
 	case "time":
 		return netTimeSync(tc)
 	case "nic":
@@ -448,57 +436,6 @@ func toolNetPort(tc *toolCtx) (int, string) {
 		tc.log("line", fmt.Sprintf("%-5s %-24s %-24s %-11s %-7s %s", r.proto, r.local, r.remote, r.state, r.pid, nm))
 	}
 	return 0, fmt.Sprintf("共 %d 条记录", len(rows))
-}
-
-// ---- Hosts 编辑 ----
-func toolNetHosts(tc *toolCtx) (int, string) {
-	p := filepath.Join(os.Getenv("SystemRoot"), "System32", "drivers", "etc", "hosts")
-	dir := filepath.Join(os.Getenv("LOCALAPPDATA"), "3z9wOpt", "reports")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		tc.log("err", "无法创建备份目录："+err.Error())
-		return 1, "备份失败"
-	}
-	bak := filepath.Join(dir, "hosts_backup_"+time.Now().Format("20060102_150405")+".txt")
-	if b, err := os.ReadFile(p); err == nil {
-		if err := os.WriteFile(bak, b, 0644); err != nil {
-			tc.log("err", "备份失败："+shortErr(err))
-			return 1, "备份失败"
-		}
-		tc.log("ok", "原文件已备份："+bak)
-	} else {
-		tc.log("dim", "未找到 hosts 文件，将新建")
-	}
-	tc.log("line", "正在打开 hosts（记事本）："+p)
-	if err := exec.Command(resolveExe("notepad.exe"), p).Start(); err != nil {
-		tc.log("err", "打开失败："+shortErr(err))
-		return 1, "打开失败"
-	}
-	return 0, "已用记事本打开，保存后如需立即生效请再点一次「刷新 DNS 缓存」"
-}
-
-// ---- 面板子动作：重置 Hosts ----
-func netHostsReset(tc *toolCtx) (int, string) {
-	p := filepath.Join(os.Getenv("SystemRoot"), "System32", "drivers", "etc", "hosts")
-	dir := filepath.Join(os.Getenv("LOCALAPPDATA"), "3z9wOpt", "reports")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		tc.log("err", "无法创建备份目录："+err.Error())
-		return 1, "备份失败"
-	}
-	bak := filepath.Join(dir, "hosts_backup_reset_"+time.Now().Format("20060102_150405")+".txt")
-	if b, err := os.ReadFile(p); err == nil {
-		if err := os.WriteFile(bak, b, 0644); err != nil {
-			tc.log("err", "备份失败："+shortErr(err))
-			return 1, "备份失败"
-		}
-		tc.log("ok", "原 Hosts 已备份："+bak)
-	}
-	defaultHosts := "# 默认空 Hosts 文件\r\n# 由 3z9wOpt 重置生成\r\n# 如需自定义请使用「Hosts 文件编辑」\r\n"
-	if err := os.WriteFile(p, []byte(defaultHosts), 0644); err != nil {
-		tc.log("err", "重置失败："+shortErr(err))
-		return 1, "重置失败"
-	}
-	tc.log("ok", "Hosts 已重置为默认空状态")
-	return 0, "Hosts 已重置，建议再点一次「刷新 DNS 缓存」"
 }
 
 // ---- 面板子动作：同步时间（修 SSL 证书报错） ----

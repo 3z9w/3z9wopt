@@ -612,7 +612,7 @@ func protectReasonAny(exe, appName string) (string, bool) {
 
 // collectProbePaths 收集「拿去问谁占着」的抽样路径。
 // 全量注册会拖慢清理前的等待（有的项上万文件），抽样足够反映"是谁占着"。
-//   - 目录型项才抽样，命令型项（recycle / vss / dism …）没有具体文件可问
+//   - 目录型项才抽样，命令型项（recycle / dismreset …）没有具体文件可问
 //   - 每项最多 perItem 条，总数封顶 total 条
 func collectProbePaths(ctx context.Context, items []JunkItem, perItem, total int) []string {
 	var out []string

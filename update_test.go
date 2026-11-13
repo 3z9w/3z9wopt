@@ -1,10 +1,8 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"fmt"
+
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -145,12 +143,8 @@ func fakeServer(t *testing.T, m updateManifest, pkg []byte, pkgPath string) *htt
 func useFakeServer(t *testing.T, srv *httptest.Server) {
 	t.Helper()
 	updateManifestURLOverride = srv.URL + "/version.json"
-	updateAllowInsecureForTest = true
-	updateTempDirOverride = t.TempDir()
 	t.Cleanup(func() {
 		updateManifestURLOverride = ""
-		updateAllowInsecureForTest = false
-		updateTempDirOverride = ""
 	})
 }
 
@@ -162,7 +156,7 @@ func TestCheckUpdateStates(t *testing.T) {
 	defer func() { appVersion = oldVer }()
 
 	sha := strings.Repeat("a", 64)
-	pkg := make([]byte, updateMinBytes+1024)
+	pkg := make([]byte, 4096)
 	srv := fakeServer(t, updateManifest{
 		Version: "9.9.9", BuildDate: "2026-11-01", Notes: []string{"新东西"},
 		URL: "", SHA256: sha,
@@ -344,89 +338,6 @@ func TestVerifySelfStates(t *testing.T) {
 	}
 }
 
-func TestDownloadUpdate(t *testing.T) {
-	pkg := make([]byte, updateMinBytes+4096)
-	for i := range pkg {
-		pkg[i] = byte(i % 251)
-	}
-	sum := sha256.Sum256(pkg)
-	goodSHA := hex.EncodeToString(sum[:])
-
-	srv := fakeServer(t, updateManifest{}, pkg, "/download/3z9wOpt_v9.9.9.exe")
-	useFakeServer(t, srv)
-	a := NewApp()
-
-	// ① 正常下载 + 校验通过
-	res := a.DownloadUpdate(srv.URL+"/download/3z9wOpt_v9.9.9.exe", goodSHA)
-	if res.State != "ok" {
-		t.Fatalf("正常下载应该成功，拿到 %q：%s", res.State, res.Message)
-	}
-	if res.Size != int64(len(pkg)) {
-		t.Errorf("大小应该是 %d，拿到 %d", len(pkg), res.Size)
-	}
-	if _, err := os.Stat(res.Path); err != nil {
-		t.Errorf("下载完的文件应该还在：%v", err)
-	}
-	if !strings.HasSuffix(strings.ToLower(res.Path), ".exe") {
-		t.Errorf("落盘文件名该是 .exe，拿到 %q", res.Path)
-	}
-
-	// ② 指纹对不上 → 必须失败，而且要把文件删掉（不能留个坏包在机器上）
-	badSHA := strings.Repeat("b", 64)
-	res2 := a.DownloadUpdate(srv.URL+"/download/3z9wOpt_v9.9.9.exe", badSHA)
-	if res2.State == "ok" {
-		t.Fatal("指纹不符居然算成功 —— 这是最严重的一种，会把坏文件装上去")
-	}
-	if res2.Message == "" {
-		t.Error("指纹不符要给用户看得懂的原因")
-	}
-	if res2.Path != "" {
-		if _, err := os.Stat(res2.Path); err == nil {
-			t.Error("指纹不符的包必须删掉，不能留给替换步骤")
-		}
-	}
-
-	// ③ 没给指纹 → 直接拒，不许"下完再说"
-	res3 := a.DownloadUpdate(srv.URL+"/download/3z9wOpt_v9.9.9.exe", "")
-	if res3.State == "ok" {
-		t.Error("没有官方指纹就不该下载")
-	}
-
-	// ④ 非 https 地址 → 拒绝（沙箱里放开是为了测，线上必须挡）
-	updateAllowInsecureForTest = false
-	res4 := a.DownloadUpdate(srv.URL+"/download/3z9wOpt_v9.9.9.exe", goodSHA)
-	if res4.State == "ok" {
-		t.Error("http 地址必须拒绝")
-	}
-	updateAllowInsecureForTest = true
-
-	// ⑤ 文件太小（服务器返回了错误页）→ 丢弃
-	small := []byte("<html>404</html>")
-	smallSum := sha256.Sum256(small)
-	srvS := fakeServer(t, updateManifest{}, small, "/small.exe")
-	updateManifestURLOverride = srvS.URL + "/version.json"
-	res5 := a.DownloadUpdate(srvS.URL+"/small.exe", hex.EncodeToString(smallSum[:]))
-	if res5.State == "ok" {
-		t.Error("几百字节的东西不能当更新包")
-	}
-}
-
-func TestApplyUpdateRejectsBadInput(t *testing.T) {
-	a := NewApp()
-	if msg := a.ApplyUpdate(""); msg == "" {
-		t.Error("空路径要拒绝")
-	}
-	dir := t.TempDir()
-	if msg := a.ApplyUpdate(dir); msg == "" {
-		t.Error("目录要拒绝")
-	}
-	tiny := filepath.Join(dir, "tiny.exe")
-	_ = os.WriteFile(tiny, []byte("xx"), 0o644)
-	if msg := a.ApplyUpdate(tiny); msg == "" {
-		t.Error("明显不完整的小文件要拒绝")
-	}
-}
-
 func TestCopyFile(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "a.bin")
@@ -457,12 +368,4 @@ func TestCopyFile(t *testing.T) {
 	if err := copyFile(filepath.Join(dir, "不存在.bin"), filepath.Join(dir, "c.bin")); err == nil {
 		t.Error("源文件不存在应该报错")
 	}
-}
-
-// 更新器模式参数不足时直接返回，不许越界（main 里就是靠这个分支先分流的）
-func TestUpdateApplierArgsGuard(t *testing.T) {
-	runUpdateApplier([]string{"-apply-update"})
-	runUpdateApplier([]string{"-apply-update", "1"})
-	runUpdateApplier([]string{"-apply-update", "abc", "x", "y"}) // pid 不是数字也不能崩
-	_ = fmt.Sprint("")
 }

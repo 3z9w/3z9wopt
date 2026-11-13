@@ -137,7 +137,10 @@ func registerTool(cats []ToolCat, byCat map[string][]ToolItem, impls map[string]
 	if strings.TrimSpace(it.ID) == "" {
 		return fmt.Errorf("工具 ID 不能为空（%q）", it.Name)
 	}
-	if it.Name == "" || it.Desc == "" || it.Cmd == "" {
+	// Desc/Cmd 唯一允许为空的例外：speedtest（2026-11-12 用户拍板：说明文字全删，
+	// 工具窗口整个让给实时仪表盘；前端卡片/窗口均已按空值条件渲染）
+	noCopy := it.ArgKind == "speedtest"
+	if it.Name == "" || (!noCopy && (it.Desc == "" || it.Cmd == "")) {
 		return fmt.Errorf("工具 %s 的 Name/Desc/Cmd 不能为空", it.ID)
 	}
 	if _, dup := impls[it.ID]; dup {

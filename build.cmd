@@ -7,10 +7,10 @@ rem  NOTE: this file must stay pure ASCII - cmd.exe reads .bat/.cmd
 rem        in the OEM codepage (936 on Chinese Windows), so any
 rem        non-ASCII literal here would turn into garbage paths.
 rem
-rem    build.cmd            -> DEV build  (bin\3z9wOpt_v<ver>-dev.exe)
-rem                            version ends with -dev: no update check,
-rem                            no fingerprint check. Build as often as
-rem                            you like, never publish it.
+rem    build.cmd            -> DEV build  (bin\3z9wOpt_v<ver>.exe, same file
+rem                            name as release; appVersion is "<ver>-dev":
+rem                            no update check, no fingerprint check. Build
+rem                            as often as you like, never publish it.)
 rem
 rem    build.cmd release    -> RELEASE build (bin\3z9wOpt_v<ver>.exe)
 rem                            allocates a build number (YYYYMMDD.N),
@@ -54,7 +54,7 @@ set "GOARCH=amd64"
 rem Version is defined ONCE here. It means "feature set" - bump it only
 rem when you decide to announce a new release. Bug fixes and UI tweaks
 rem just get a new build number from tools/relgen.
-set "APPVER=1.1.0"
+set "APPVER=1.2.0"
 
 rem ---- args: release = publishable build; quiet = automation, no pause ----
 set "MODE=dev"
@@ -71,8 +71,12 @@ if not exist "%ROOT%bin" mkdir "%ROOT%bin"
 if /i "%MODE%"=="release" goto :plan_release
 
 rem ---------- everyday build (dev) ----------
+rem 2026-11-12 user rule: dev product keeps the SAME file name as release
+rem (bin\3z9wOpt_v%APPVER%.exe) - only one exe file in bin\. Dev is still
+rem safe to hand out: VERSTR ends with -dev, update check + fingerprint
+rem verify stay disabled.
 set "VERSTR=%APPVER%-dev"
-set "EXE=%ROOT%bin\3z9wOpt_%APPVER%-dev.exe"
+set "EXE=%ROOT%bin\3z9wOpt_v%APPVER%.exe"
 set "LDFLAGS=-s -w -H windowsgui -X main.appVersion=%VERSTR%"
 echo.
 echo   Building 3z9wOpt [DEV] ...

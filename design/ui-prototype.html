@@ -67,6 +67,7 @@ html[data-theme="light"] .chip.ok{color:#065f46;border-color:rgba(10,127,87,.34)
 html[data-theme="light"] .chip.warn{color:#8a4b06;border-color:rgba(163,92,7,.34);background:rgba(245,158,11,.17)}
 html[data-theme="light"] .chip.danger{color:#9f1239;border-color:rgba(207,18,68,.34);background:rgba(207,18,68,.12)}
 html[data-theme="light"] .chip.info{color:#1442c8;border-color:rgba(21,80,224,.34);background:rgba(21,80,224,.12)}
+html[data-theme="light"] .chip.new{color:#5b21b6;border-color:rgba(124,58,237,.34);background:rgba(124,58,237,.1)}
 html[data-theme="light"] .btn.danger{color:var(--danger);border-color:rgba(207,18,68,.40)}
 html[data-theme="light"] .btn.danger:hover{background:rgba(207,18,68,.10);border-color:rgba(207,18,68,.62)}
 html[data-theme="light"] .side-cta{background:rgba(15,76,255,.09);border-color:rgba(15,76,255,.30);color:#0b2f9e}
@@ -288,6 +289,9 @@ body.booting .app{animation:appRescue 0s linear 8s forwards}
 .side-cta:hover{border-color:rgba(96,165,250,.55);transform:translateY(-1px)}
 .side-cta .sc{flex:1;overflow:hidden;text-overflow:ellipsis}
 .side-cta small{display:block;font-size:10.5px;color:var(--tx3);font-weight:400}
+/* 侧栏底部「关于本软件」卡的状态点（2026-11-13 方案四）：latest=绿，new=黄；色值走主题变量 */
+.side-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.side-dot.new{background:var(--warn)}
 .side-mini{
   width:100%;display:flex;align-items:center;gap:11px;height:34px;padding:0 10px;border:0;
   background:transparent;color:var(--tx3);border-radius:var(--r3);cursor:pointer;font:inherit;font-size:12.5px;
@@ -601,9 +605,10 @@ body.booting .app{animation:appRescue 0s linear 8s forwards}
   border-bottom:1px dashed var(--stroke);cursor:pointer;user-select:none;border-radius:6px;transition:background .15s}
 .cat-i:hover{background:var(--glass-hi);color:var(--tx1)}
 .cat-i:last-child{border-bottom:0}
-.cat-i > .chip{margin-left:auto}          /* 只作用于直接子 chip（pick 页的「谨慎 / 你的文件」） */
+.cat-i .row-chips{display:flex;align-items:center;gap:6px;flex:none;width:124px;margin-left:auto}   /* 固定宽标签列：每个标签各占一条竖列，pick 页与结果页同一套（2026-11-12） */
 .cat-i .grow{flex:1;min-width:0}
-.cat-i .size{font-size:12.5px;color:var(--tx2);font-variant-numeric:tabular-nums;margin-left:12px;white-space:nowrap}
+.cat-i .size{font-size:12.5px;color:var(--tx2);font-variant-numeric:tabular-nums;margin-left:12px;white-space:nowrap;
+  min-width:72px;text-align:right}   /* 定宽右对齐：否则「30.1 MB / 7.0 KB / —」宽窄不一，左边的标签列跟着漂 */
 .pick-ico{
   width:46px;height:46px;flex:none;border-radius:13px;display:grid;place-items:center;
   background:linear-gradient(135deg,rgba(96,165,250,.14),rgba(96,165,250,.03));
@@ -622,6 +627,7 @@ body.booting .app{animation:appRescue 0s linear 8s forwards}
 .chip.warn{color:var(--warn);border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.1)}
 .chip.danger{color:var(--danger);border-color:rgba(251,113,133,.3);background:rgba(251,113,133,.1)}
 .chip.info{color:var(--info);border-color:rgba(96,165,250,.3);background:rgba(96,165,250,.1)}
+.chip.new{color:#c4b5fd;border-color:rgba(167,139,250,.35);background:rgba(167,139,250,.12);font-weight:640}
 
 /* 进度 */
 .bar{height:7px;border-radius:var(--r4);background:var(--glass-sink);overflow:hidden;border:1px solid var(--stroke)}
@@ -1377,7 +1383,7 @@ html[data-motion="off"] .reveal{opacity:1 !important; transform:none !important}
 <div id="splash">
   <div class="splash-mark"><span class="splash-ring"></span><span class="splash-ring2"></span><img class="splash-logo" alt="" src="data:image/png;base64,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"></div>
   <div class="splash-name">无名大叔系统优化工具箱</div>
-  <div class="splash-ver">v1.1.0</div>
+  <div class="splash-ver">v1.2.0</div>
   <div class="splash-bar"><i></i></div>
   <div class="splash-tip">正在准备…</div>
 </div>
@@ -1390,7 +1396,7 @@ html[data-motion="off"] .reveal{opacity:1 !important; transform:none !important}
       <div>
         <div class="brand-name">无名大叔系统优化工具箱</div>
       </div>
-      <span class="brand-ver" id="brandVer">v1.1.0</span>
+      <span class="brand-ver" id="brandVer">v1.2.0</span>
     </div>
     <div class="tb-spacer"></div>
     <div class="tb-search" id="cmdOpen">
@@ -1415,7 +1421,14 @@ html[data-motion="off"] .reveal{opacity:1 !important; transform:none !important}
     <aside class="sidebar" id="sidebar">
       <div class="nav-scroll" id="nav"></div>
       <div class="side-foot">
-        <button class="side-mini" id="sideAbout" title="打开设置 · 关于"><span class="ni" data-ico="info"></span><span>关于</span></button>
+        <!-- 2026-11-13 用户拍板方案四：底部关于做成「版本 + 更新状态」卡（替代原单行 side-mini）。
+             版本号来自 GetAboutInfo（window.ABOUT.version，异步）；右侧圆点 = 更新检查结果
+             （UPD.state：latest 绿 / new 黄），点开直达设置-关于。 -->
+        <button class="side-cta" id="sideAbout" title="打开设置 · 关于">
+          <span class="ni" data-ico="info"></span>
+          <span class="sc">关于本软件<small id="sideVerSub"></small></span>
+          <span class="side-dot" id="sideDot" hidden></span>
+        </button>
       </div>
     </aside>
 
@@ -1883,6 +1896,7 @@ const P = {
   play:'M7.5 4.8 18.5 12 7.5 19.2z',
   sparkle:'M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9zM18.5 16.5l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z',
   arrow:'M5 12h14M13 6l6 6-6 6',
+  down:'M12 3.5v11M7.5 10 12 14.5 16.5 10M4.5 20.5h15',
   clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7.2V12l3.4 2',
   copy:'M9 9h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1',
   terminal:'M3.5 4.5h17v15h-17zM7.5 9.5l2.8 2.5-2.8 2.5M12.8 15h3.7',
@@ -1984,7 +1998,6 @@ const FAKE = {
     ]},
     {c:'实用工具', items:[
       {n:'强制结束占用', d:'删不掉的文件，先结束占用它的进程', risk:'caution', ico:'close'},
-      {n:'打开 hosts 文件', d:'直接编辑域名映射', risk:'caution', ico:'doc'},
       {n:'命令行终端', d:'在当前目录打开 PowerShell', risk:'safe', ico:'terminal'},
       {n:'清空剪贴板', d:'清掉复制过的内容', risk:'safe', ico:'copy'},
     ]},
@@ -2040,6 +2053,7 @@ function setItemScan(it, bytes, files, empty, paths, e){
   if(e){
     it.lk = e.lockedBytes || 0; it.lkn = e.lockedFiles || 0;
     it.dn = e.deniedBytes  || 0; it.dnn = e.deniedFiles  || 0;
+    it.ur = e.unread       || 0;   /* 读不动的目录数：体积没量到，不假装量准了 */
   }
   junkBump();
 }
@@ -2136,9 +2150,7 @@ let JUNK = [
     J('崩溃转储文件','程序与系统崩溃时生成的 .dmp 文件',1.68e8),
     J('系统日志文件','CBS / DISM 等 Windows 日志，被占用自动跳过',9.2e7),
     J('系统服务日志','各服务运行日志，被占用自动跳过',6.6e7),
-    J('事件日志','清空 Application / System / Security / Setup 四类事件日志',4.8e7,'caution'),
     JN('IIS 日志','未装 IIS；装在其他盘也能扫到（不再只认 C 盘）'),
-    J('Defender 历史与隔离区','扫描历史记录与隔离的威胁文件',2.10e8,'caution'),
     J('系统诊断数据','Windows 诊断与遥测日志，被占用自动跳过',1.32e8),
   ]},
   {g:'浏览器缓存', items:[
@@ -2217,8 +2229,6 @@ let JUNK = [
   ]},
   {g:'深度清理', items:[
     J('系统磁盘清理 (cleanmgr)','调用系统磁盘清理，能回收旧驱动包 / 未使用语言包等直删方式碰不到的项（耗时较长，数分钟起）',2.10e9,'caution','','slow',true),
-    J('Windows.old 旧系统','升级系统留下的旧版 Windows，删除后无法回退',1.24e10,'caution'),
-    J('系统还原点','删除全部卷影还原点，可腾出大量空间',6.20e9,'caution'),
     J('Installer 补丁缓存','MSI 补丁缓存，清理后部分软件无法修复或卸载更新',8.2e8,'caution'),
     J('Office 安装源缓存','Office 本地安装源（所有磁盘都扫），清理后修复安装需插入介质',1.40e9,'caution'),
     J('全盘零散垃圾文件','递归所有固定磁盘清 tmp / log / bak / old / dmp（已含各盘根目录残留，只算一次）；会触及软件依赖的日志与备份',2.44e9,'caution'),
@@ -3553,10 +3563,6 @@ function demoPreview(){ return catalogState === 'demo'; }
    清理 / 扫描 / 跑工具这类给 20 分钟兜底；其余保持 15 秒（连不上要快点知道）。 */
 function callTimeoutFor(nm){
   var n = String(nm).split('.').pop();
-  /* ⚠️ 下载更新包必须单独放宽（2026-10-13）：默认 15 秒，而 15MB 的包在慢网下十几秒到一分钟都可能，
-     会被前端判成「调用超时」—— 用户看到的是"下载失败"，其实后端还在下。
-     后端自己会在真正读不动的时候报错，这里只做兜底，不设紧闸。 */
-  if(/^DownloadUpdate$/.test(n)) return 5 * 60 * 1000;
   /* 拉清单 / 核对原版：后端 http 超时是 10 秒，给它留够返回的时间，别在边界上抖动 */
   if(/^(CheckUpdate|VerifySelf)$/.test(n)) return 30000;
   /* 占用者探测：实测 5~9 秒（Restart Manager 抽 112 条路径），15 秒的默认闸太贴边，
@@ -3657,6 +3663,8 @@ function bindGoEvents(){
   /* 工具库：实时输出与结束 */
   onGo('tool:log', function(kind, text){ if(window.tkOnLog) window.tkOnLog(kind, text); });
   onGo('tool:done', function(code, secs, msg){ if(window.tkOnDone) window.tkOnDone(code, secs, msg); });
+  /* 宽带测速：实时速率 / 进度（JSON 字符串）→ 窗口里的仪表盘 */
+  onGo('speed:tick', function(js){ if(window.tkOnSpeed) window.tkOnSpeed(js); });
   /* 系统优化：逐项进度 */
   onGo('opt:progress', function(done, total, name, id){
     OPT_BUSY = {done:done, total:total, name:'正在处理：' + (name || '')};
@@ -3665,11 +3673,7 @@ function bindGoEvents(){
     if(pct) pct.textContent = done + ' / ' + total;
     if(now) now.textContent = OPT_BUSY.name;
   });
-  /* 软件更新：下载进度（后端约每 150ms 推一次）。
-     这里只改进度条那两个节点，不整窗重画 —— 重画会让进度条每次从头开始闪。 */
-  onGo('update:progress', function(done, total){
-    if(window.SetPanel && typeof window.SetPanel.onProgress === 'function') window.SetPanel.onProgress(done, total);
-  });
+  /* 2026-11-12 误报治理：下载进度事件随软件内下载一起移除（后端已无发送方）。 */
 }
 /* 拉本机清理清单。失败必须让用户看见 —— 原来只有一句 console.warn，
    用户看到的就是一份"看起来很真"的假数据（2026-10-09 修）。 */
@@ -3707,10 +3711,15 @@ function applyCatalog(list){
          不是猜的、也不是靠上次记的。落在每一行的说明里，勾不勾仍然由用户说了算。 */
       lk: it.lockedBytes || 0, lkn: it.lockedFiles || 0,
       dn: it.deniedBytes || 0, dnn: it.deniedFiles || 0,
+      ur: it.unread || 0,   /* 扫描时读不动的目录数：体积未计入，行里如实提示 */
       r: it.risk === 'warn' ? 'caution' : 'safe',
       ip: it.impact || '',                  /* 后端标的"会打扰用户"的动作：explorer / service / slow */
       asy: !!it.async,                      /* 后端标的"这一项放到后台跑"（分钟级，主流程不等它） */
       na: !!it.empty, on: !it.empty,
+      /* dof：扫描完成后默认**不勾**（后端 DefOff）。只影响「扫完的默认勾选」，
+         不影响扫描范围 —— 选分类页里两项回收站都还勾着，扫完才把「其他账户」取消掉。
+         用户想要就自己勾上；这也是这门功能敢做出来的前提。 */
+      dof: !!it.defOff,
       cnt: !!COUNT_GROUP[g], k: (it.id === 'winsxstmp' || it.id === 'dismreset') ? 'winsxs' : ''
     });
   });
@@ -3739,7 +3748,7 @@ const GRP_DESC = {
   '日志与注册表':'错误报告、崩溃转储、各类日志与失效的注册表项','浏览器缓存':'Chrome / Edge / Firefox 等网页缓存',
   '应用缓存':'常用软件产生的缓存数据','AI 应用缓存':'AI 工具的模型与对话缓存',
   /* 「注册表垃圾」「快捷方式」两个键随组一起并掉了（后端已无这两个组） */
-  '使用痕迹':'最近使用记录与跳转列表','深度清理':'旧系统、还原点、全盘零散文件等大项（谨慎）'
+  '使用痕迹':'最近使用记录与跳转列表','深度清理':'补丁缓存、组件重置、全盘零散文件等大项（谨慎）'
 };
 /* ── 大类（2026-10-10）：后端那 10 个小类直接铺开是 10 行、68 项，一屏装不下还要滑。
    按"是谁产生的垃圾"合成 3 个大类：**扫描顺序、清理顺序、界面顺序都按这里的先后**，
@@ -3864,7 +3873,9 @@ const CATS = [
      塞在"临时文件"里会让人误以为系统临时目录堆了 1 GB（实际只有几十 MB）。
      放在最前面 —— 它是用户最熟、也最该先看一眼再决定清不清的一块。 */
   {c:'回收站', ico:'trash',
-   d:'各分区回收站里的文件（你自己删进去的），清空后不可恢复',
+   /* 2026-11-12：回收站按账户拆成两项。本账户走系统接口、默认清理；
+      其他/已删除账户的残留单独一项，**默认不勾**，勾了才删（决定权交给用户）。 */
+   d:'各分区回收站里的文件；本账户默认清理，其他账户残留默认不勾、勾了才清',
    g:['回收站']},
   {c:'临时文件', ico:'box',
    d:'系统与用户临时目录、失效快捷方式',
@@ -3891,7 +3902,7 @@ const CATS = [
    d:'运行框与地址栏历史、浏览器历史、最近文档',
    g:['使用痕迹']},
   {c:'深度清理', ico:'trash',
-   d:'旧系统、还原点、补丁缓存、组件存储重置、Defender 隔离区、全盘零散文件（清了不可逆）',
+   d:'补丁缓存、组件存储重置、全盘零散文件等大项（谨慎）',
    g:['深度清理']}
 ];
 const CAT_ON = {};     /* 大类是否参与扫描（默认全勾） */
@@ -4029,6 +4040,7 @@ function deletableNote(it){
   const out = [];
   if(it.lkn) out.push('<span class="chip caution">'+fmtSize(it.lk)+' 被程序占用</span>');
   if(it.dnn) out.push('<span class="chip caution">'+fmtSize(it.dn)+' 受系统保护</span>');
+  if(it.ur)  out.push('<span class="chip caution">另有 '+it.ur+' 处被占用，体积未计入</span>');
   if(!out.length) return '';
   return '<div class="row-d" style="margin-top:3px">'+out.join(' ')+'</div>';
 }
@@ -4089,12 +4101,16 @@ function renderCleanPick(){
           /* 明细里的每一项都能单独勾 —— 没这个能力，"部分选中"就是句空话 */
           + (open ? '<div class="cat-sub">'
               + live.map(function(it){
-                  return '<div class="cat-i" data-pickitem="u'+junkUid(it)+'">'
-                    + '<div class="cbx '+(it.on?'on':'')+'">'+cbxInner(it.on?'on':'off')+'</div>'
-                    + '<span>'+it.n+'</span>'
-                    + (it.r === 'caution' ? '<span class="chip warn">谨慎</span>' : '')
-                    + (it.hv ? '<span class="chip">你的文件</span>' : '')
-                    + '</div>';
+                return '<div class="cat-i" data-pickitem="u'+junkUid(it)+'">'
+                  + '<div class="cbx '+(it.on?'on':'')+'">'+cbxInner(it.on?'on':'off')+'</div>'
+                  + '<div class="grow"><span>'+it.n+'</span></div>'
+                  /* 2026-11-12 用户拍板：标签不再各自 margin-left:auto —— 两个标签时剩余空间
+                     被平分，「谨慎」会悬在行中间（实拍）。收进固定宽度的标签列，与结果页同一套。 */
+                  + '<div class="row-chips">'
+                  +   (it.r === 'caution' ? '<span class="chip warn">谨慎</span>' : '')
+                  +   (it.hv ? '<span class="chip">你的文件</span>' : '')
+                  + '</div>'
+                  + '</div>';
                 }).join('')
               + '</div>' : '')
           + '</div>';
@@ -4221,6 +4237,9 @@ function renderCleanResult(){
   +     '</div>'
   +     '<div class="res-sub">已选 <b data-selsize style="color:var(--info)">'+fmtSize(ssum.clean)+'</b>'
   +       ' · <b data-seln>'+sel.length+'</b> / '+items.length+' 项</div>'
+  /* 2026-11-12 用户拍板：结果页不再放「另有 X 属其他账户」那行橙色二次提示。
+     这部分每一行的说明文字里本来就写着「默认不勾，勾选后永久删除、无法恢复」，
+     展开就能看到，顶卡片再喊一遍是重复。 */
   +   '</div>'
   +   '<div class="res-btns">'
   +     '<button class="btn sm" data-selall>全选</button>'
@@ -4263,9 +4282,12 @@ function renderCleanResult(){
               /* 从清理前提醒点「返回检查」回来的项带 hl：高亮 + bind 时滚过去 */
               return '<div class="cat-i'+(CLEAN_HL[junkUid(it)]?' hl':'')+'">'
                 + '<div class="cbx '+(it.on?'on':'')+'" data-cbx="u'+junkUid(it)+'">'+cbxInner(it.on?'on':'off')+'</div>'
-                + '<div class="grow"><div class="row-t">'+it.n+' <span class="chip '+RISK[it.r].c+'">'+RISK[it.r].t+'</span>'
-                +   (it.hv ? '<span class="chip warn">你的文件</span>' : '')+'</div>'
+                /* 2026-11-12 用户拍板：「谨慎 / 你的文件」标签不再挤在名称后面（名称长短不一，
+                   标签位置就参差不齐），改挂到行右侧、体积左边 —— 与扫描选择页的右对齐一致。 */
+                + '<div class="grow"><div class="row-t">'+it.n+'</div>'
                 + '<div class="row-d">'+it.d+'</div>'+deletableNote(it)+'</div>'
+                + '<div class="row-chips"><span class="chip '+RISK[it.r].c+'">'+RISK[it.r].t+'</span>'
+                +   (it.hv ? '<span class="chip warn">你的文件</span>' : '')+'</div>'
                 + '<div class="size">'+itemSize(it)+'</div></div>';
             }).join('')
         + '</div></div>';
@@ -4631,9 +4653,10 @@ function finishScan(groups, found, files){
   JUNK.forEach(function(g){
     const hit = groups.indexOf(g.g) > -1;
     g.items.forEach(function(it){
-      /* 扫描前用户手动勾过的项**保留他的选择**，没动过的才默认全选。
-         否则他在 pick 页取消了"回收站"，扫完又自动勾回去 —— 那就白选了。 */
-      it.on = hit && !it.na && (it._userSet ? it.on : true);
+      /* 扫描前用户手动勾过的项**保留他的选择**，没动过的才按默认来：
+         普通项默认勾上；标了 dof 的（其他账户回收站）默认**不勾** —— 扫到不等于要删，
+         删不删由用户自己勾。 */
+      it.on = hit && !it.na && (it._userSet ? it.on : !it.dof);
     });
   });
   CATS.forEach(function(c){ GRP_FOLD[c.c] = true; });   /* 结果页默认收起 */
@@ -5119,7 +5142,7 @@ function askThenDo(title, body, okText, fn){
              校验范围 = 当前跑的 exe + 下载下来的包，两个都校验；
              检查时机 = 启动静默查一次（有新版才在齿轮上点个小点）+ 设置里可手动查。
    状态机都在下面这两个对象里，渲染只读它们，不猜。 */
-let UPD = {state:'idle', info:null, prog:null, msg:'', at:''};
+let UPD = {state:'idle', info:null, msg:'', at:''};
 let VER = {state:'idle', r:null, msg:''};
 let SET_OPEN = false;
 
@@ -5154,28 +5177,17 @@ function updHtml(){
       +   (info.size ? '（约 '+fmtSize(info.size)+'）' : '') + '</div>'
       + notes
       + (info.buildDate ? '<div class="upd-meta">发布于 '+escHome(info.buildDate)+'</div>' : '')
+      + '<div class="upd-meta" style="white-space:normal">到官网发布页或 GitHub Releases 下载新版本压缩包，解压覆盖即可升级（软件内不再自动下载替换）。</div>'
       + '<div class="btn-row" style="margin-top:10px">'
-      +   '<button class="btn sm" id="setUpdGo">'+ico('bolt',14)+'下载并更新</button>'
+      +   '<button class="btn sm" id="setUpdGo">'+ico('box',14)+'去官网下载</button>'
+      +   '<button class="btn sm" id="setUpdGh">'+ico('globe',14)+'GitHub 下载</button>'
       +   '<button class="btn sm" id="setUpdCheck">再查一次</button>'
       + '</div>'
       + '</div>';
-    /* 按钮都在上面那个盒子里，右侧不再放 —— 免得同一屏出现两个"下载"入口 */
+    /* 按钮都在上面那个盒子里，右侧不再放 —— 免得同一屏出现两个入口 */
   } else if(s === 'latest'){
     line = '<span class="upd-line upd-ok">已是最新版本 '+verLabel(info.latest||SET.ver||'')+'</span>';
     tail = btn('setUpdCheck', '再查一次');
-  } else if(s === 'downloading'){
-    const p = UPD.prog || {done:0, total:0};
-    const pct = p.total ? Math.min(100, Math.round(p.done / p.total * 100)) : 0;
-    line = '<span class="upd-line" style="color:var(--tx3)">正在下载 '+verLabel((UPD.info||{}).latest||'')+'…</span>';
-    line += '<div class="upd-bar"><i id="updBarFill" style="width:'+pct+'%"></i></div>'
-      + '<div class="upd-meta" id="updMeta">' + fmtSize(p.done) + (p.total ? (' / ' + fmtSize(p.total) + ' · ' + pct + '%') : '') + '</div>';
-    tail = '<button class="btn sm" disabled>下载中</button>';
-  } else if(s === 'ready'){
-    line = '<span class="upd-line upd-ok">更新包已下好，指纹对得上</span>';
-    tail = btn('setUpdApply', '替换并重启', 'primary');
-  } else if(s === 'applying'){
-    line = '<span class="upd-line" style="color:var(--tx3)">正在替换，软件马上会自己重开…</span>';
-    tail = '<button class="btn sm" disabled>替换中</button>';
   } else {  /* offline / badmanifest / fail：一律把原因写出来 */
     line = '<span class="upd-line upd-bad">'+(s === 'offline' ? '没查到更新信息' : '检查没成功')+'</span>'
       + '<div class="upd-meta" style="color:var(--tx3);white-space:normal">'+escHome(UPD.msg || info.message || '未知原因')+'</div>';
@@ -5248,14 +5260,39 @@ function checkUpdate(silent){
       UPD.msg = r.message || '';
     }
     UPD.busy = false;
+    paintSideVer();
     if(SET_OPEN) window.SetPanel.refresh();
   }).catch(function(e){
     UPD.state = 'offline';
     UPD.msg = '调用后端失败：' + e;
     UPD.busy = false;
+    paintSideVer();
     if(SET_OPEN) window.SetPanel.refresh();
   });
 }
+
+/* 侧栏底部「关于本软件」卡的版本行 + 更新状态点（2026-11-13 方案四）。
+   版本来自 window.ABOUT（GetAboutInfo，about.js 的 loadAbout 填，其 abAfter 会回调这里）；
+   状态来自 UPD（checkUpdate 出结果时也会调这里）。没查过更新（idle）就只显示版本，
+   不演"已是最新"——没查过就说查过，是骗人。 */
+function paintSideVer(){
+  const sub = document.getElementById('sideVerSub'), dot = document.getElementById('sideDot');
+  if(!sub) return;
+  const a = window.ABOUT || {};
+  let v = a.version ? String(a.version) : '';
+  if(v && v.charAt(0) !== 'v') v = 'v' + v;
+  let st = '', dotCls = '';
+  if(UPD.state === 'new'){ st = '发现新版本'; dotCls = ' new'; }
+  else if(UPD.state === 'latest'){ st = '已是最新版本'; }
+  else if(UPD.state === 'offline'){ st = '没查到更新'; }
+  sub.textContent = (v && st) ? (v + ' · ' + st) : (v || st || '');
+  if(dot){
+    const show = (UPD.state === 'new' || UPD.state === 'latest');
+    dot.hidden = !show;
+    dot.className = 'side-dot' + dotCls;
+  }
+}
+window.paintSideVer = paintSideVer;
 
 function verifySelf(){
   if(VER.state === 'busy') return;
@@ -5272,61 +5309,24 @@ function verifySelf(){
   });
 }
 
-/* 下载 → 校验 → 确认 → 替换。中间任何一步失败都停在原地，绝不放行到"替换"。 */
-function downloadUpdate(){
-  const info = UPD.info || {};
-  if(!info.url || !info.sha256){ toast('没有拿到官方下载地址或指纹，先重新检查一次', 'warn'); return; }
-  if(UPD.busy) return;
-  setBusy(true);
-  UPD.state = 'downloading';
-  UPD.prog = {done:0, total:info.size || 0};
-  if(SET_OPEN) window.SetPanel.refresh();
-  callGo('DownloadUpdate', info.url, info.sha256).then(function(r){
-    setBusy(false);
-    r = r || {};
-    if(r.state !== 'ok'){
-      UPD.state = 'fail';
-      UPD.msg = r.message || '下载失败';
-      if(SET_OPEN) window.SetPanel.refresh();
-      return;
-    }
-    UPD.localPath = r.path;
-    UPD.state = 'ready';
-    if(SET_OPEN) window.SetPanel.refresh();
-    toast('更新包已下好并通过校验', 'ok');
-  }).catch(function(e){
-    setBusy(false);
-    UPD.state = 'fail';
-    UPD.msg = '下载失败：' + e;
-    if(SET_OPEN) window.SetPanel.refresh();
-  });
+/* 有新版 → 打开官方发布页让用户浏览器下载（2026-11-12 误报治理：软件内不再下载/自替换）。
+   地址来源跟「发布页」卡片同一条链（about 的 publish），读不到就直说，
+   绝不拿写死的网址顶替 —— 没读到就演成"有地方去"是骗人。 */
+function openUpdatePage(){
+  const u = ((SET.about || window.ABOUT || {}).publish) || 'https://opt.3z9w.com/';
+  if(typeof window.tbOpen === 'function'){ window.tbOpen(u); return; }
+  try{ window.open(u, '_blank', 'noopener'); }
+  catch(_){ toast('打开失败，发布页地址是：' + u, 'warn'); }
 }
 
-function applyUpdate(){
-  if(!UPD.localPath){ toast('更新包不见了，重新下载一次', 'warn'); return; }
-  askThenDo('现在替换成新版本？',
-    '软件会先备份当前这份，然后把自己换掉并自动重开。'
-    + '<br><br>换的过程中窗口会关一下，属正常。'
-    + '如果替换失败，会自动退回现在这一版，不会两头空。',
-    '替换并重启', function(){
-      UPD.state = 'applying';
-      if(SET_OPEN) window.SetPanel.refresh();
-      callGo('ApplyUpdate', UPD.localPath).then(function(msg){
-        if(msg){
-          UPD.state = 'ready';
-          UPD.msg = msg;
-          if(SET_OPEN) window.SetPanel.refresh();
-          toast(msg, 'danger');
-          return;
-        }
-        /* 后端会自己把程序关掉，这里只留一句提示 */
-        toast('正在替换，软件马上重开…', 'info');
-      }).catch(function(e){
-        UPD.state = 'ready';
-        UPD.msg = '替换失败：' + e;
-        if(SET_OPEN) window.SetPanel.refresh();
-      });
-    });
+/* GitHub Releases 第二下载入口（2026-11-12 用户拍板加）：地址跟关于页 GitHub 仓库同一条链
+   （GetAboutInfo 的 github 字段），拿仓库地址拼 /releases；读不到就用内置兜底，别静默失败。 */
+function openUpdatePageGH(){
+  const repo = ((SET.about || window.ABOUT || {}).github) || 'https://github.com/3z9w/3z9wopt';
+  const u = /\/releases\/?$/.test(repo) ? repo : repo.replace(/\/+$/, '') + '/releases';
+  if(typeof window.tbOpen === 'function'){ window.tbOpen(u); return; }
+  try{ window.open(u, '_blank', 'noopener'); }
+  catch(_){ toast('打开失败，GitHub 地址是：' + u, 'warn'); }
 }
 
 /* ── 关于（真数据）───────────────────────────────────────────────── */
@@ -5437,7 +5437,10 @@ function cleanStart(sel){
   /* 分钟级、放到后台跑的项也要说一声（2026-10-11 用户要求：和完成页那句"它还在后台跑"对上），
       —— 用户可以就地取消，也可以"返回检查"去结果页找它。 */
   const aHits = sel.filter(function(it){ return it.asy; });
-  const quiet = !hits.length && !aHits.length;
+  /* 勾了「其他账户回收站」这种默认不勾的项：**必须弹窗**。
+     它是永久删除别人的数据、不可恢复，不能像普通缓存那样一路直通。 */
+  const rHits = sel.filter(function(it){ return it.dof; });
+  const quiet = !hits.length && !aHits.length && !rHits.length;
   /* 弹窗一开就有遮罩挡着，背后按钮点不到 → 这时候把按钮放开，别一直转圈 */
   const openIt = function(lks){ done(); openCleanConfirm(sel, hits, aHits, lks || []); };
   const goRun  = function(s){ done(); runClean(s); };
@@ -5594,6 +5597,8 @@ function openCleanConfirm(sel, hits, aHits, lockers){
      超出时弹窗顶出视口 = 底部按钮点不到（1020×660 实测 boxH 667 > 视口 660）。 */
   /* 顺序：占用进程放最前（标题说的就是它，勾选也在这儿，装不下要滚的时候先看到它），
      资源管理器/后台长项的说明与勾选跟在后面。 */
+  /* 2026-11-12 用户拍板：不再给「其他账户回收站」加弹窗内的橙色二次警示——
+     该项说明文字与勾选行本身就写明「永久删除、无法恢复」，不用再喊一遍。 */
   const midHtml = lkHtml
     + (hits.length ? '<div class="modal-d"'+(lockers.length?' style="margin-top:2px"':'')+'>'+IMPACT.explorer.d+'</div>' : '')
     + (aHits.length
@@ -5813,9 +5818,8 @@ function init(){
   bindGoEvents();      /* 接 Wails 时监听后端扫描 / 清理事件流；浏览器直开时静默跳过 */
   loadCapStats();      /* 首页能力带的两个数量由后端现数，不写死 */
   loadHomeDisks();     /* 首页健康分要用真实磁盘剩余空间 */
-  /* 启动静默查一次更新（2026-10-13 用户拍板）：不弹窗、不打扰，
-     有新版才在顶栏齿轮上点一个小点。等几秒再查，别跟启动时的其它读取抢时间。 */
-  setTimeout(function(){ try{ checkUpdate(true); }catch(_){} }, 3500);
+  /* 2026-11-12 误报治理（用户拍板删）：开机 3.5 秒静默查更新整段移除。
+     软件启动不再自动外联；查更新只保留设置面板里的手动「检查更新」。 */
   /* 设置齿轮（2026-10-13）：从下面那个 window.runtime 块里挪出来了 ——
      设置现在是弹窗，浏览器直开预览时也该点得开，不该只在 exe 里能用。 */
   const tbSetBtn = document.getElementById('tbSet');
@@ -5826,15 +5830,21 @@ function init(){
   const sideAboutBtn = document.getElementById('sideAbout');
   if(sideAboutBtn) sideAboutBtn.onclick = function(){ window.SetPanel.open('about'); };
 
+  /* 方案四（2026-11-13）：侧栏版本状态卡 —— 启动画一次，版本还没读到就先拉 GetAboutInfo
+     （本地调用，零联网零写盘；about.js 的 abAfter 回调 paintSideVer 补上版本行）。 */
+  paintSideVer();
+  if(!window.ABOUT && typeof window.loadAbout === 'function') window.loadAbout();
+
   /* 无边框窗口：最小化 / 最大化 / 关闭交给 Wails runtime（浏览器打开时按钮只是装饰） */
   if(window.runtime){
     const wm = document.getElementById('winMin'), wx = document.getElementById('winMax'), wc = document.getElementById('winClose');
-  /* 2026-11-10 临时入口：服务大厅删除后，原「找大叔」按钮统一跳官网服务页。
-     链接取自后端 SvcLinks()，前端不硬编码；最终保留与否由用户后续决定。 */
+  /* 2026-11-13 用户拍板：「找大叔」跳官网主页 www.3z9w.com（原跳报修页已废）。
+     关于页原「远程服务」按钮同日删除（与访问官网重复），此函数现只剩「找大叔」一个调用方。
+     链接取自后端 SvcLinks() 的 site，前端不硬编码；读不到就明说。 */
   window.openService = function(){
     callGo('SvcLinks').then(function(l){
-      var u = (l && (l.order || l.site)) || '';
-      if(!u){ toast('没读到服务页地址', 'warn'); return; }
+      var u = (l && l.site) || '';
+      if(!u){ toast('没读到官网地址', 'warn'); return; }
       if(typeof window.tbOpen === 'function'){ window.tbOpen(u); return; }
       try{ window.open(u, '_blank', 'noopener'); }catch(_){ toast('打开失败，地址是：' + u, 'warn'); }
     }).catch(function(e){ toast('服务页地址读取失败：' + String(e), 'warn'); });
@@ -5846,18 +5856,33 @@ function init(){
       const box = document.getElementById('modalBox');
       const doShow = function(src){
         if(!box){ return; }
-        box.innerHTML = '<div class="modal-t">' + ico('heart',18) + ' 赞赏支持</div>'
-          + '<div class="modal-d">这软件不收钱，也不锁功能。要是帮你省了事，可以请大叔喝杯咖啡。</div>'
-          + '<div style="text-align:center;margin:6px 0 4px">'
-          +   '<img src="' + src + '" alt="赞赏码" style="width:240px;max-width:100%;border-radius:14px;border:1px solid var(--stroke)">'
-          +   '<div style="font-size:11.5px;color:var(--tx3);margin-top:8px">微信扫码 · 金额随意</div>'
+        /* 2026-11-13 用户拍板：赞赏弹窗重排 —— 全居中。
+           文案两层：短句标题「互联网的初衷是分享」+ 副文案（永久免费/开源/无会员/无广告 + 请喝咖啡）。
+           底部按钮行取消：弹窗本就支持点遮罩 / Esc 关闭，右上角补 ×（复用 set-x 样式）；
+           原两个按钮里「复制官网地址」改成轻量文字链「把软件分享给朋友」（复制官网链接），动作才有意义；
+           「知道了」删除 —— 看码弹窗不需要确认按钮。 */
+        box.style.position = 'relative';
+        box.innerHTML = '<button class="set-x" id="rwX" title="关闭" aria-label="关闭" style="position:absolute;top:10px;right:10px">×</button>'
+          + '<div class="modal-t" style="justify-content:center">' + ico('heart',18) + ' 赞赏支持</div>'
+          + '<div style="text-align:center;font-size:15px;font-weight:500;margin:14px 0 6px">互联网的初衷是分享</div>'
+          + '<div class="modal-d" style="text-align:center;max-width:330px;margin:0 auto">本软件永久免费、开源，没有会员，也没有广告。<br>如果它帮到了你，可以请大叔喝杯咖啡。</div>'
+          + '<div style="text-align:center;margin:16px auto 0;width:200px">'
+          +   '<img src="' + src + '" alt="赞赏码" style="width:200px;max-width:100%;border-radius:14px;border:1px solid var(--stroke)">'
           + '</div>'
-          + '<div class="modal-f"><button class="btn" id="rwCopy">复制官网地址</button>'
-          + '<button class="btn primary" id="rwClose">知道了</button></div>';
+          + '<div style="text-align:center;font-size:11.5px;color:var(--tx3);margin-top:10px">微信扫码 · 金额随意</div>'
+          + '<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--stroke)">'
+          +   '<button id="rwShare" style="appearance:none;-webkit-appearance:none;border:0;background:none;color:var(--info);font:inherit;font-size:12.5px;cursor:pointer;padding:0">把软件分享给朋友</button>'
+          + '</div>';
         document.getElementById('modal').classList.add('open');
-        document.getElementById('rwClose').onclick = closeModal;
-        document.getElementById('rwCopy').onclick = function(){
-          callGo('CopyText', (l && l.site) || 'https://www.3z9w.com').then(function(msg){ toast(msg ? ('复制失败：' + msg) : '官网地址已复制', msg ? 'danger' : 'ok'); });
+        /* 2026-11-13 修：从设置窗（关于面板）里弹出的赞赏框，关闭时只该关这一层，
+           设置窗要原样画回来 —— 跟清理确认框同一条 SET_ASKING 链路（closeModal 里恢复）。
+           之前没置这个标志，点 × / Esc / 遮罩会直接把整个设置窗也关掉，退回工具页。 */
+        if(window.SetPanel && typeof window.SetPanel.isOpen === 'function' && window.SetPanel.isOpen()){
+          window.SET_ASKING = true;
+        }
+        document.getElementById('rwX').onclick = closeModal;
+        document.getElementById('rwShare').onclick = function(){
+          callGo('CopyText', (l && l.site) || 'https://www.3z9w.com').then(function(msg){ toast(msg ? ('复制失败：' + msg) : '链接已复制，发给朋友吧', msg ? 'danger' : 'ok'); });
         };
       };
       if(!file){ toast('赞赏码没打包进来（frontend/dist/zanshang-qr.png）', 'warn'); return; }
@@ -5996,5 +6021,6 @@ function markCmd(){
 init();
 
 </script>
+
 </body>
 </html>

@@ -7,6 +7,14 @@ package main
 // ③ 全程实时推送速率，界面上能看到速度爬升曲线，而不是干等一个最终数字。
 //
 // 节点都是国内可直连的公共大文件镜像 + Cloudflare 官方测速端点，不依赖任何第三方 SDK。
+//
+// v1.2.0 误报治理后的取舍（改动原因见《误报治理.md》§11）：
+//   - 下载目标全部写死在代码里，**不再**从远端接口拉取节点列表——「远端下发 URL 当下载目标」
+//     是杀软眼里最典型的下载器模板，宁可少几个专用节点也不背这个画像。
+//   - 节点只用非可执行大文件（Ubuntu 镜像 / Cloudflare 计数端点），下载 exe 安装包的节点全部移除。
+//   - UA 诚实标识本软件，不再伪装浏览器；不再带 Referer。
+//   - 只允许重定向到白名单内的节点域名，远端无法把下载目标改到别的主机。
+//   - 并发从 48 降到 8，回到普通多线程下载器的水平。
 
 import (
 	"context"
@@ -16,6 +24,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -34,81 +43,62 @@ type speedNode struct {
 	Kind string // "range"（镜像大文件，用 Range 分段）或 "cf"（整文件反复 GET：Cloudflare / Ookla 节点）
 }
 
-// speedUA 测速请求的浏览器 UA。
-// 关键：运营商 Ookla 专用测速节点会校验 UA（2026-09-21 实测：默认 UA 直接 500，
-// 带浏览器 UA 才放行），所以所有测速请求统一带浏览器 UA。
-const speedUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+// speedUA 测速请求的 User-Agent：诚实写自己的名字，不再伪装浏览器。
+// 选节点时就按这个 UA 实测（见 speedProbe），能被拦的节点直接探测不到、自动落选。
+var speedUA = "3z9wOpt/" + appVersion
 
-// 内置候选节点：都是支持 Range 的大文件或官方测速端点。
+// 内置候选节点：都是支持 Range 的大文件镜像或官方测速端点，全部为 HTTPS 静态地址。
 // 想加节点就往这里加一条，探测阶段会自动算速率并选最快的。
 var speedNodes = []speedNode{
-	{Name: "微信 CDN", URL: "https://dldir1.qq.com/weixin/Windows/WeChatSetup.exe", Host: "dldir1.qq.com", Kind: "range"},
 	{Name: "华为云镜像", URL: "https://mirrors.huaweicloud.com/ubuntu-releases/22.04/ubuntu-22.04.5-desktop-amd64.iso", Host: "mirrors.huaweicloud.com", Kind: "range"},
-	{Name: "360 下载站", URL: "https://down.360safe.com/se/360se_setup.exe", Host: "down.360safe.com", Kind: "range"},
 	{Name: "网易镜像", URL: "https://mirrors.163.com/ubuntu-releases/22.04/ubuntu-22.04.5-desktop-amd64.iso", Host: "mirrors.163.com", Kind: "range"},
-	{Name: "Cloudflare", URL: "https://speed.cloudflare.com/__down?bytes=4000000", Host: "speed.cloudflare.com", Up: "https://speed.cloudflare.com/__up", Kind: "cf"},
+	{Name: "清华镜像", URL: "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-releases/22.04/ubuntu-22.04.5-desktop-amd64.iso", Host: "mirrors.tuna.tsinghua.edu.cn", Kind: "range"},
+	{Name: "Cloudflare", URL: "https://speed.cloudflare.com/__down?bytes=25000000", Host: "speed.cloudflare.com", Up: speedUpURL, Kind: "cf"},
 }
 
 // 上行兜底节点：国内镜像基本都不接受匿名 POST 大包，用 Cloudflare 官方上行端点
 const speedUpURL = "https://speed.cloudflare.com/__up"
 
+// 本机公网 IP 与归属地（ipip.net 公共接口：HTTPS、无需 key、中文地名）
+const speedIPInfoURL = "https://myip.ipip.net/json"
+
 const (
 	speedProbeBytes  = 1200000  // 选节点时的探测流量（每节点约 1.2MB，并发探测约 3–4 秒）
 	speedDownSeconds = 6        // 正式下行测速时长
 	speedUpSeconds   = 4        // 上行测速时长
-	speedDownThreads = 48       // 下行总并发连接（360 同款思路：连接数拉满才测得出真实带宽）
+	speedDownThreads = 8        // 下行总并发连接（v1.2.0：48 → 8，普通多线程下载器水平）
 	speedUpThreads   = 4        // 上行并发线程
 	speedMaxBytes    = 600 << 20 // 下行总流量上限（保护流量，先到先停）
 	speedPingCount   = 8        // 延迟测试包数（8 包约 6–8 秒，兼顾统计与总时长）
 )
 
-// ---- 专用测速节点：Ookla 公开服务器列表 ----
+// speedAllowedHosts 允许访问 / 允许重定向过去的主机白名单：只含内置节点与两个固定端点。
+// 目的只有一个——下载目标永远是我们写死在代码里的地址，远端没有任何途径把它改走。
+var speedAllowedHosts = func() map[string]bool {
+	m := map[string]bool{}
+	for _, n := range speedNodes {
+		if h := strings.ToLower(n.Host); h != "" {
+			m[h] = true
+		}
+	}
+	for _, raw := range []string{speedUpURL, speedIPInfoURL} {
+		if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+			m[strings.ToLower(u.Hostname())] = true
+		}
+	}
+	return m
+}()
 
-// speedOoklaNodes 运行时拉取 Speedtest(Ookla) 公开服务器列表（与 360 同级的运营商
-// 专用测速节点，同网不限速），转成候选。拉取失败返回空（回退到静态 CDN 节点）。
-func speedOoklaNodes(ctx context.Context) []speedNode {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://www.speedtest.net/api/js/servers?engine=js&limit=30", nil)
-	if err != nil {
-		return nil
+// speedRedirect 重定向策略：只许跳到白名单内的主机，最多 3 跳。
+func speedRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 3 {
+		return fmt.Errorf("重定向次数过多")
 	}
-	req.Header.Set("User-Agent", speedUA)
-	req.Header.Set("Referer", "https://www.speedtest.net/")
-	client := &http.Client{Timeout: 6 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil
+	host := strings.ToLower(req.URL.Hostname())
+	if !speedAllowedHosts[host] {
+		return fmt.Errorf("已阻止跳转到非测速节点：%s", host)
 	}
-	defer resp.Body.Close()
-	var arr []struct {
-		URL     string `json:"url"`
-		Sponsor string `json:"sponsor"`
-		Host    string `json:"host"`
-		CC      string `json:"cc"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&arr); err != nil {
-		return nil
-	}
-	var out []speedNode
-	for _, s := range arr {
-		base := s.URL
-		if i := strings.LastIndex(base, "/speedtest/upload.php"); i >= 0 {
-			base = base[:i+len("/speedtest/")]
-		} else if !strings.HasSuffix(base, "/speedtest/") {
-			continue
-		}
-		host := s.Host
-		if i := strings.LastIndex(host, ":"); i > 0 {
-			host = host[:i] // 去端口，ping 用
-		}
-		out = append(out, speedNode{
-			Name: "专用节点·" + s.Sponsor,
-			URL:  base + "random4000x4000.jpg",
-			Host: host,
-			Up:   s.URL,
-			Kind: "cf", // 整文件反复 GET，与 Cloudflare 同款逻辑
-		})
-	}
-	return out
+	return nil
 }
 
 // ---- 事件推送 ----
@@ -126,12 +116,10 @@ func speedTick(tc *toolCtx, m map[string]interface{}) {
 
 func toolSpeedTest(tc *toolCtx) (int, string) {
 	tc.log("head", "宽带测速：自动选节点 → 延迟/抖动/丢包 → 下行 → 上行")
-	tc.log("dim", "提示：测速会消耗几十 MB 流量；用 WiFi 请尽量靠近路由器，别边下东西边测。")
 
-	// ① 选节点：专用测速节点(Ookla) + 静态 CDN 一起探测，聚合最快的几个
+	// ① 选节点：只用内置的静态节点（下载地址全部写死在代码里，不做任何远端拉取）
 	speedTick(tc, map[string]interface{}{"phase": "probe", "label": "正在挑选最快的测速节点…", "pct": 5})
-	cands := speedOoklaNodes(tc.ctx)
-	cands = append(cands, speedNodes...) // 静态 CDN 兜底（列表拉不到时也有的测）
+	cands := append([]speedNode{}, speedNodes...)
 	picks := speedPickNode(tc.ctx, cands, tc.log)
 	if len(picks) == 0 {
 		tc.log("err", "所有测速节点都连不上，请检查网络是否正常（或被防火墙拦截）")
@@ -326,7 +314,8 @@ func speedPing(ctx context.Context, host string) (lat, jitter, loss float64) {
 
 func speedClient(maxIdle int) *http.Client {
 	return &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout:       30 * time.Second,
+		CheckRedirect: speedRedirect, // 只许在节点白名单内跳转
 		Transport: &http.Transport{
 			DisableCompression:    true, // 关压缩：统计的是真实线路字节数
 			MaxIdleConnsPerHost:   maxIdle + 2,
@@ -524,28 +513,37 @@ func speedUpload(ctx context.Context, onTick func(mbps, pct float64)) float64 {
 
 // ---- 结论 ----
 
-// speedIPInfo 查本机公网 IP 与归属地（ip-api.com 免费接口，中文，失败静默）
+// speedIPInfo 查本机公网 IP 与归属地（ipip.net 公共接口：HTTPS、无需 key、中文地名，失败静默）。
+// v1.2.0 起由明文 http://ip-api.com 换成这里：不再走明文 HTTP，也不带任何本机信息上去。
 func speedIPInfo(ctx context.Context) (ip, loc, isp string) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://ip-api.com/json/?lang=zh-CN&fields=query,regionName,city,isp", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", speedIPInfoURL, nil)
 	if err != nil {
 		return "", "", ""
 	}
-	client := &http.Client{Timeout: 4 * time.Second}
+	req.Header.Set("User-Agent", speedUA)
+	client := &http.Client{Timeout: 4 * time.Second, CheckRedirect: speedRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", ""
 	}
 	defer resp.Body.Close()
 	var m struct {
-		Query      string `json:"query"`
-		RegionName string `json:"regionName"`
-		City       string `json:"city"`
-		ISP        string `json:"isp"`
+		Ret  string `json:"ret"`
+		Data struct {
+			IP       string   `json:"ip"`
+			Location []string `json:"location"` // [国家, 省, 市, 区县, 运营商]
+		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil || m.Query == "" {
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil || m.Data.IP == "" {
 		return "", "", ""
 	}
-	return m.Query, strings.TrimSpace(m.RegionName + " " + m.City), strings.TrimSpace(m.ISP)
+	part := func(i int) string {
+		if i < len(m.Data.Location) {
+			return strings.TrimSpace(m.Data.Location[i])
+		}
+		return ""
+	}
+	return m.Data.IP, strings.TrimSpace(part(1) + " " + part(2)), part(4)
 }
 
 // speedVerdict 结论：tier = 套餐区间（界面刻度条大字），verdict = 一行结论

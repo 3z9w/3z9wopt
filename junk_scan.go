@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -24,6 +25,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 // scanWorkers 目录级并发 worker 数。
@@ -345,16 +347,22 @@ func listDirsFast(ctx context.Context, root string, maxDepth int) []string {
 
 // walkSizeFast 统计目录体积：目录级工作池 4 路（沿用 v1.0 实测最优），
 // 遍历时顺带取体积，免去事后逐个 Stat。junction / 软链接一律不深入。
-func walkSizeFast(ctx context.Context, root string) (int64, int) {
+//
+// 2026-11-12 第三个返回值 unread：**读不动**（被占用 / 权限不足）的目录数。
+// 旧版这里直接 return，整棵子树按 0 字节计账、不留任何痕迹 —— Edge 刚清完
+// 正锁着目录时量不到 → 报 0；锁放开重扫 → 440 MB 又冒出来，用户看到的就是
+// 「清干净了怎么又有一大堆」的数字跳变。根不存在不算 unread（目标本来就没落上）。
+func walkSizeFast(ctx context.Context, root string) (int64, int, int) {
 	// 2026-10-09 修复：原来只判子目录是不是重解析点，根目录本身不判。
 	// Edge/IE 的 INetCache 与 Temporary Internet Files 互指 junction，
 	// 同一份缓存会在同一个项里被计两次。这里补上根目录判定。
 	if root != "" && isReparsePoint(root) {
-		return 0, 0
+		return 0, 0, 0
 	}
 	var mu sync.Mutex
 	var total int64
 	var count int
+	var unread int
 	dirs := make(chan string, 4096)
 	var pending sync.WaitGroup
 	var wg sync.WaitGroup
@@ -366,6 +374,13 @@ func walkSizeFast(ctx context.Context, root string) (int64, int) {
 		}
 		entries, err := readDirGated(d)
 		if err != nil {
+			/* 没量到就是没量到 —— 计数上报（it.Unread → 界面提示「另有 N 处被占用，
+			   体积未计入」），绝不静默吞掉假装是 0。目录本身没了不算（IsNotExist）。 */
+			if !os.IsNotExist(err) {
+				mu.Lock()
+				unread++
+				mu.Unlock()
+			}
 			return
 		}
 		for _, e := range entries {
@@ -418,7 +433,7 @@ func walkSizeFast(ctx context.Context, root string) (int64, int) {
 		go worker()
 	}
 	wg.Wait()
-	return total, count
+	return total, count, unread
 }
 
 // ---------------------------------------------------------------------------
@@ -479,43 +494,227 @@ type shQueryRBInfo struct {
       清空回收站真正腾出来的是磁盘上的实际占用，所以 **walk 的口径才是对的**。
    ③ **根本没进合计**（独立成组后才暴露）：TotalUniqueSplit 见 tsize 为空就整项跳过，
       于是全场最大的一块（638 MB）在主数字里是 0。现在 tsize 按盘填真实路径。
-   兜底：walk 一个都没读到（没权限 / 精简版没这个目录）时退回官方接口，不许显示 0。 */
+   兜底：walk 一个都没读到（没权限 / 精简版没这个目录）时退回官方接口，不许显示 0。
+
+   🔴 2026-11-12 订正上面第 ② 条的推论：当时那 578 MB 差额**不是精度差，是别人的**——
+      $Recycle.Bin 下按 SID 分目录，官方接口只报当前账户，我们 walk 的是全场。
+      拿「walk 更大」当「walk 更准」，正是「清了 643 MB 实际只清 65 MB」的根。
+      现在 walk 的范围收窄到当前账户（recycleMineStats），与清理接口同口径。 */
 func recycleBinTotal() (int64, int) {
-	_, total, files := recycleBinScan()
-	if total == 0 {
-		_, t2, f2 := recycleBinTotalAPI()
-		return t2, f2
-	}
+	_, total, files := recycleMineStats()
 	return total, files
 }
 
-// recycleBinScan 并发枚举各固定盘的 $Recycle.Bin。
-// 返回：分盘体积（键是真实路径，要给 TotalUniqueSplit 做去重）、总体积、总文件数。
-func recycleBinScan() (map[string]int64, int64, int) {
+// currentUserSID 取当前进程令牌的用户 SID（形如 S-1-5-21-...-500）。
+//
+// 🔴 2026-11-12：这是「回收站计量按账户收窄」的地基。取不到就返回空串，
+// 调用方必须退回系统接口（它天然只认当前用户）——**绝不允许退化成「把所有 SID 都算进来」**，
+// 那正是虚报 577 MB 的来源。
+func currentUserSID() string {
+	sidOnce.Do(func() {
+		var tok windows.Token
+		if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY, &tok); err != nil {
+			cleanTrace(fmt.Sprintf("取当前用户 SID 失败（退回系统接口口径）: %v", err))
+			return
+		}
+		defer tok.Close()
+		tu, err := tok.GetTokenUser()
+		if err != nil || tu == nil || tu.User.Sid == nil {
+			cleanTrace(fmt.Sprintf("读令牌用户失败（退回系统接口口径）: %v", err))
+			return
+		}
+		s := tu.User.Sid.String()
+		if s == "" {
+			cleanTrace("SID 转字符串为空（退回系统接口口径）")
+			return
+		}
+		sidCache = s
+	})
+	return sidCache
+}
+
+var (
+	sidOnce  sync.Once
+	sidCache string
+)
+
+// recycleMineStats 只量「当前登录账户」在各固定盘回收站里占的那一份。
+//
+// 为什么收窄（2026-11-12 用户拍板）：SHEmptyRecycleBinW 只清当前账户那一份目录，
+// 旧实现却把整个 $Recycle.Bin 都量进来 —— 「清了 643 MB」里有 577 MB 属于一个
+// 早已删除的账户，数字凭空虚高。
+// 盘符一律走 fixedDrives() 动态枚举：别人机器上可能是任意几个分区，绝不写死。
+func recycleMineStats() (map[string]int64, int64, int) {
+	sid := currentUserSID()
+	if sid == "" {
+		/* 拿不到 SID：退回系统接口。它只认当前用户，正好是我们要的口径；
+		   绝不允许退化成「把所有 SID 都算进来」—— 那正是虚报 577 MB 的来源。 */
+		return recycleBinTotalAPI()
+	}
 	sizes := map[string]int64{}
 	var total int64
 	var files int
+	for _, root := range fixedDrives() {
+		bin := filepath.Join(root, "$Recycle.Bin")
+		ents, err := os.ReadDir(bin)
+		if err != nil {
+			continue // 这个盘没有回收站目录 / 读不到：不是错误
+		}
+		for _, e := range ents {
+			if !e.IsDir() || !strings.EqualFold(e.Name(), sid) {
+				continue
+			}
+			p := filepath.Join(bin, e.Name())
+			b, c := walkSize(p)
+			if b == 0 && c == 0 {
+				continue
+			}
+			sizes[strings.ToLower(p)] = b
+			total += b
+			files += c
+		}
+	}
+	/* 自己那份一个文件都没量到、系统接口却说非 0：说明当前账户目录读不全
+	   （权限 / 重定向），以系统接口为准 —— 它报的就是当前账户。 */
+	if total == 0 {
+		if bs, t2, f2 := recycleBinTotalAPI(); t2 > 0 {
+			return bs, t2, f2
+		}
+	}
+	return sizes, total, files
+}
+
+// recycleOther 其他账户回收站的分布。
+//   sizes  = 孤儿 SID 目录 -> 体积（可清理的那部分，键小写给 TotalUniqueSplit 去重）
+//   live*  = 仍在使用（或系统账户）的回收站 —— 本软件不碰，只在说明里如实提示
+//   profOK = 是否成功读到本机账户列表；读不到 ⇒ 一个都不许删
+type recycleOther struct {
+	sizes     map[string]int64
+	bytes     int64
+	files     int
+	liveBytes int64
+	liveFiles int
+	profOK    bool
+}
+
+// recycleOtherStats 遍历所有固定盘上「非当前账户」的回收站目录，按账户是否还存在分成两类。
+// 盘符动态枚举，一台机器上有几个分区就算几个。
+func recycleOtherStats() recycleOther {
+	o := recycleOther{sizes: map[string]int64{}}
+	prof := profileSIDs()
+	o.profOK = prof != nil
+	cur := currentUserSID()
+
+	type job struct{ name, path string }
+	var jobs []job
+	for _, root := range fixedDrives() {
+		bin := filepath.Join(root, "$Recycle.Bin")
+		ents, err := os.ReadDir(bin)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if !e.IsDir() {
+				continue
+			}
+			if cur != "" && strings.EqualFold(e.Name(), cur) {
+				continue // 当前账户由 recycleMineStats 负责
+			}
+			jobs = append(jobs, job{e.Name(), filepath.Join(bin, e.Name())})
+		}
+	}
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	/* 只问固定盘：光驱 / 网络盘 / 读卡器上没有回收站。各盘并发 —— walk 是纯磁盘 IO，
-	   并发有效（不像 shell32 那个接口内部是串行的，并发反而更慢）。 */
-	for _, root := range fixedDrives() {
+	for _, j := range jobs {
 		wg.Add(1)
-		go func(root string) {
+		go func(j job) {
 			defer wg.Done()
-			b, c := walkSize(root + `$Recycle.Bin`)
-			if c == 0 {
+			b, c := walkSize(j.path)
+			if b == 0 && c == 0 {
 				return
 			}
 			mu.Lock()
-			sizes[root+`$Recycle.Bin`] = b
-			total += b
-			files += c
-			mu.Unlock()
-		}(root)
+			defer mu.Unlock()
+			if isDeletableOrphanSID(j.name, cur, prof) {
+				o.sizes[strings.ToLower(j.path)] = b
+				o.bytes += b
+				o.files += c
+			} else {
+				o.liveBytes += b
+				o.liveFiles += c
+			}
+		}(j)
 	}
 	wg.Wait()
-	return sizes, total, files
+	return o
+}
+
+// profileSIDs 读「本机还有用户配置文件」的 SID 集合（大写键）。
+// 判据交给系统自己：HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList
+// 里有的，就是这台机上还活着的账户。
+// 🔴 读不到就返回 nil —— 调用方据此按「账户归属未知」处理，一个都不删。
+func profileSIDs() map[string]bool {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE,
+		`SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList`, registry.READ)
+	if err != nil {
+		cleanTrace(fmt.Sprintf("读 ProfileList 失败（账户归属未知，不删任何回收站）: %v", err))
+		return nil
+	}
+	defer k.Close()
+	names, err := k.ReadSubKeyNames(-1)
+	if err != nil || len(names) == 0 {
+		cleanTrace(fmt.Sprintf("枚举 ProfileList 失败（账户归属未知）: %v", err))
+		return nil
+	}
+	out := make(map[string]bool, len(names))
+	for _, n := range names {
+		out[strings.ToUpper(n)] = true
+	}
+	return out
+}
+
+// looksLikeUserSID 只认 S-1-5-21-<数字>-<数字>-<数字>-<RID> 这一种形态。
+// 目的：把 S-1-5-18/-19/-20（SYSTEM / 服务账户）以及任何非常规目录名挡在删除范围之外。
+func looksLikeUserSID(s string) bool {
+	const prefix = "S-1-5-21-"
+	if len(s) <= len(prefix) || !strings.EqualFold(s[:len(prefix)], prefix) {
+		return false
+	}
+	parts := strings.Split(s[len(prefix):], "-")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for i := 0; i < len(p); i++ {
+			if p[i] < '0' || p[i] > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isDeletableOrphanSID 这个 SID 目录里的东西能不能删。三条同时成立才算孤儿：
+//   ① 不是当前账户  ② 是标准用户 SID  ③ 本机账户列表里查无此人。
+// prof == nil（读不到账户列表）→ 一律 false：宁可少清，也绝不误删别人的。
+func isDeletableOrphanSID(name, cur string, prof map[string]bool) bool {
+	if prof == nil {
+		return false
+	}
+	if cur != "" && strings.EqualFold(name, cur) {
+		return false
+	}
+	if !looksLikeUserSID(name) {
+		return false
+	}
+	if prof[strings.ToUpper(name)] {
+		return false
+	}
+	return true
 }
 
 // recycleBinTotalAPI 走 shell32!SHQueryRecycleBinW 逐盘问（旧口径，现在只作兜底）。
@@ -549,23 +748,60 @@ func recycleBinTotalAPI() (map[string]int64, int64, int) {
 	return sizes, total, n
 }
 
+// recycleMeasure 「回收站」这一项：只量当前登录账户，与清理接口（SHEmptyRecycleBinW）同口径。
+// tsize 必须按盘填真实路径：TotalUniqueSplit 见 tsize 为空会整项跳过，
+// 那样这一块在主数字里就成了 0（2026-10-14 踩过）。
 func recycleMeasure(it *JunkItem) {
-	/* tsize 必须按盘填真实路径：TotalUniqueSplit 见 tsize 为空会整项跳过，
-	   那样全场最大的一块（本机 638 MB）在主数字里就成了 0（2026-10-14）。 */
-	sizes, total, files := recycleBinScan()
-	if total == 0 {
-		/* 兜底（没权限 / 精简版没这个目录）：tsize 照样按盘填真实路径，
-		   🔴 不能像以前那样留空 map —— 空 map 会被 TotalUniqueSplit 整项跳过，
-		   列表显示 600 MB、顶部合计却是 0。 */
-		bs, t2, f2 := recycleBinTotalAPI()
-		it.tsize = bs
-		it.Bytes = t2
-		it.Files = f2
-		return
+	sizes, total, files := recycleMineStats()
+	if sizes == nil {
+		sizes = map[string]int64{}
 	}
 	it.tsize = sizes
 	it.Bytes = total
 	it.Files = files
+}
+
+// recycleOtherMeasure 「回收站（其他账户残留）」这一项：只量孤儿 SID 目录。
+// 扫到多少就报多少（默认不勾，用户自己决定清不清）；本机没有这类残留时整行隐藏。
+func recycleOtherMeasure(it *JunkItem) {
+	o := recycleOtherStats()
+	if !o.profOK {
+		/* 读不到账户列表 → 无法区分「孤儿」与「还活着的账户」。此时既不显示体积，
+		   也不许清理，把原因写在说明里（行照常可见，用户能看出是这个原因）。 */
+		it.tsize = map[string]int64{}
+		it.Bytes, it.Files = 0, 0
+		it.Desc = "读不到本机账户列表，无法判断哪些回收站属于已删除账户；为安全起见本项不清理"
+		return
+	}
+	if o.sizes == nil {
+		o.sizes = map[string]int64{}
+	}
+	it.tsize = o.sizes
+	it.Bytes = o.bytes
+	it.Files = o.files
+	if o.bytes == 0 && o.files == 0 {
+		it.Empty = true // 本机没有其他账户残留：整行隐藏，不占位
+	}
+	it.Desc = recycleOtherDesc(o)
+}
+
+// recycleOtherDesc 这一行的说明。两个数字必须分开说清楚：
+// 「孤儿的」是勾了就能清掉的，「活账户的」是本软件永远不碰的。
+func recycleOtherDesc(o recycleOther) string {
+	const base = "其他账户或已删除账户留下的回收站残留"
+	if o.bytes <= 0 {
+		if o.liveBytes > 0 {
+			return fmt.Sprintf("%s；本机现存账户的回收站里有 %s，那属于仍在使用的账户，本软件不动",
+				base, fmtBytes(o.liveBytes))
+		}
+		return base
+	}
+	s := fmt.Sprintf("%s，共 %s · %d 个文件；默认不勾，勾选后永久删除、无法恢复",
+		base, fmtBytes(o.bytes), o.files)
+	if o.liveBytes > 0 {
+		s += fmt.Sprintf("；另有 %s 属于仍在使用的账户，本软件不动", fmtBytes(o.liveBytes))
+	}
+	return s
 }
 
 func scanOne(ctx context.Context, it *JunkItem) {
@@ -576,7 +812,7 @@ func scanOne(ctx context.Context, it *JunkItem) {
 	   账上直接凭空少一大块（2026-10-15 实测踩过）。
 	   放在 ScanMs 之前，实测本身花的时间也计入这一项的耗时。 */
 	defer func() {
-		probeDeletable(it)
+		probeDeletable(ctx, it)
 		it.ScanMs = time.Since(t0).Milliseconds()
 	}()
 
@@ -584,6 +820,7 @@ func scanOne(ctx context.Context, it *JunkItem) {
 	it.tsize = map[string]int64{}
 	it.tfiles = map[string]int{}
 	it.Bytes, it.Files = 0, 0
+	it.Unread = 0 // 上一轮的「未量到」不带进本轮（probeDeletable 不动它：那是 walk 阶段累计的）
 
 	// 2026-10-09 修复：注册表垃圾 / 失效快捷方式这两类不是文件，
 	// v1.1 里 regItemMeasure / badlnkMeasure 定义了却没有任何调用点 → 界面永远显示 0 条。
@@ -603,6 +840,13 @@ func scanOne(ctx context.Context, it *JunkItem) {
 	// 回收站：走系统接口逐盘问，别再让它在界面上永远是「—」
 	if it.Cmd == "recycle" {
 		recycleMeasure(it)
+		applyRequireEmpty(it)
+		it.syncPaths()
+		return
+	}
+	// 其他账户回收站：只量孤儿 SID 目录（默认不勾，勾了才清）
+	if it.Cmd == "recycleother" {
+		recycleOtherMeasure(it)
 		applyRequireEmpty(it)
 		it.syncPaths()
 		return
@@ -636,10 +880,11 @@ func scanOne(ctx context.Context, it *JunkItem) {
 		go func(d string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			b, f := walkSizeFast(ctx, d)
+			b, f, un := walkSizeFast(ctx, d)
 			mu.Lock()
 			it.Bytes += b
 			it.Files += f
+			it.Unread += un
 			it.tsize[strings.ToLower(d)] = b
 			it.tfiles[strings.ToLower(d)] = f
 			it.targets = append(it.targets, d)
@@ -660,7 +905,13 @@ func scanOne(ctx context.Context, it *JunkItem) {
 		}
 	}
 	// 自适应：require 全不存在 → 前端隐藏该行（未安装的软件不占位）
-	applyRequireEmpty(it)
+	// 2026-11-12 语义修正：只要本次解析出了目标（dirs/files 非空）就不判未安装 ——
+	// 装在自定义路径的软件（D 盘的 QQ/微信数据根靠 gofind 发现）require 必然落空，
+	// 但目标实实在在存在，按旧逻辑会被整项隐藏、一个字节都扫不到（本机实测漏 400 MB）。
+	// require 只在「一个目标都没解析到」时才作为未安装的判据。
+	if len(dirs) == 0 && len(files) == 0 {
+		applyRequireEmpty(it)
+	}
 	/* 2026-10-15：这里原本还有两条**扫描期过滤**，已连同整套机制删除
 	（junk_blocked.go 黑名单 + junk_renew.go 压制，共 777 行，含设置页的重置入口）：
 	     dropBlocked  —— 「上次没删掉」就整项藏掉

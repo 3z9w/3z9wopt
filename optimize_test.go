@@ -79,8 +79,6 @@ func TestNeedsRebootRules(t *testing.T) {
 		"xingneng-32": true,  // 优化处理器性能（PriorityControl）
 		"xingneng-45": true,  // GPU 硬件加速（GraphicsDrivers）
 		"safe-3":      true,  // UAC 总开关 EnableLUA
-		"safe-9":      true,  // 关闭内存完整 HVCI
-		"safe-10":     true,  // 关闭虚拟化安全性 VBS
 		"xingneng-19": true,  // 禁用 SysMain（服务）
 		"xingneng-29": false, // 启用高性能电源计划（powercfg -setactive 即时）
 		"system-1":    false, // 关闭休眠（即时）
@@ -96,15 +94,16 @@ func TestNeedsRebootRules(t *testing.T) {
 			t.Fatalf("%s(%s) 的需重启判定应为 %v，实际 %v", id, it.Name, want, got)
 		}
 	}
-	// 覆盖率兜底：总数不能太少（历史上只判出 17 项，明显漏了内核/设备防护类）
+	// 覆盖率兜底：总数不能太少（历史上只判出 17 项，明显漏了内核/设备防护类）。
+	// 2026-11-12 第二批把 safe-9/safe-10/xingneng-39（3 个需重启项）改成跳转指引后，阈值同步下调。
 	rb := 0
 	for i := range optCatalog {
 		if itemNeedsReboot(&optCatalog[i]) {
 			rb++
 		}
 	}
-	if rb < 28 {
-		t.Fatalf("需重启项仅 %d 项，判定规则疑似退化（内核/服务/设备防护类应覆盖到 30 项上下）", rb)
+	if rb < 25 {
+		t.Fatalf("需重启项仅 %d 项，判定规则疑似退化（内核/服务/设备防护类应覆盖到 27 项上下）", rb)
 	}
 	t.Logf("需重启判定 OK：目录 %d 项中 %d 项需重启电脑后生效", len(optCatalog), rb)
 }
@@ -137,21 +136,33 @@ const optTestKey = `Software\3z9wOptV2Test`
 
 func TestOptCatalogIntegrity(t *testing.T) {
 	total, cats, basic, deep := OptCatalogCheck()
-	// 154 = 源目录 151 项 + optimize_extra.go 追加 3 项（2026-09-21 用户点名的常用设置）
-	if total != 154 {
-		t.Fatalf("目录项数应为 154，实际 %d", total)
+	// 156 = 源目录 153 项 + optimize_extra.go 追加 3 项（误报治理：删 4 项关防护 + 7 项改跳转指引
+	// → 84/116；2026-11-12 采纳豆包 27 条对照新增 6 项性能优化 → 84 / 122）
+	if total != 156 {
+		t.Fatalf("目录项数应为 156，实际 %d", total)
 	}
 	if cats != 7 {
 		t.Fatalf("分类数应为 7，实际 %d", cats)
 	}
-	if basic != 87 {
-		t.Fatalf("基本优化预设应为 87，实际 %d", basic)
+	if basic != 84 {
+		t.Fatalf("基本优化预设应为 84，实际 %d", basic)
 	}
-	if deep != 127 {
-		t.Fatalf("深度优化预设应为 127，实际 %d", deep)
+	if deep != 122 {
+		t.Fatalf("深度优化预设应为 122，实际 %d", deep)
 	}
-	// 每项都必须有检测字段和至少一个动作
+	// 每项要么是跳转指引项（只有 Guide），要么必须有检测字段和至少一个动作
+	guides := 0
 	for _, it := range optCatalog {
+		if it.Guide != "" {
+			guides++
+			if it.Basic || it.Deep {
+				t.Fatalf("%s 是跳转指引项，不得再进基本/深度预设", it.ID)
+			}
+			if it.CheckKey != "" || len(it.Optimize) > 0 {
+				t.Fatalf("%s 是跳转指引项，不应再带检测键或动作", it.ID)
+			}
+			continue
+		}
 		if it.CheckKey == "" {
 			t.Fatalf("%s 缺少 CheckKey", it.ID)
 		}
@@ -159,11 +170,14 @@ func TestOptCatalogIntegrity(t *testing.T) {
 			t.Fatalf("%s 没有 Optimize 动作", it.ID)
 		}
 	}
+	if guides != 7 {
+		t.Fatalf("跳转指引项应为 7，实际 %d", guides)
+	}
 	order := optCategoryOrder()
 	if len(order) != 7 {
 		t.Fatalf("分类顺序应为 7 组，实际 %d", len(order))
 	}
-	t.Logf("目录 OK：154 项（源 151 + 追加 3）/ 7 组 %v / 基本 87 / 深度 127", order)
+	t.Logf("目录 OK：156 项（含跳转指引 7）/ 7 组 %v / 基本 84 / 深度 122", order)
 }
 
 func TestDecodeRegData(t *testing.T) {

@@ -51,7 +51,8 @@ function optCounts(){
     on: OPT.filter(function(i){ return i.optimized; }).length,
     basic: OPT.filter(function(i){ return i.basic; }).length,
     deep: OPT.filter(function(i){ return i.deep; }).length,
-    reboot: OPT.filter(function(i){ return i.reboot; }).length
+    reboot: OPT.filter(function(i){ return i.reboot; }).length,
+    guide: OPT.filter(function(i){ return i.guide; }).length
   };
 }
 function optHit(it){
@@ -103,9 +104,11 @@ window.loadOptCatalog = function(){
 
 /* ── 渲染：小块 ─────────────────────────────────────────────────────────── */
 
-/* 勾与状态徽标（三态互斥：已优化 > 待应用 > 未动） */
+/* 勾与状态徽标（三态互斥：已优化 > 待应用 > 未动；跳转指引项单独一态，不可勾选） */
 function optChipsHtml(it){
+  if(it.guide) return '<span class="chip info">跳转指引</span>';
   var done = !!it.optimized, sel = !!OPT_SEL[it.id] && !done, ch = [];
+  if(it.new) ch.push('<span class="chip new">New</span>');
   if(done) ch.push('<span class="chip ok">已优化</span>');
   else if(sel) ch.push('<span class="chip info">待应用</span>');
   if(it.reboot) ch.push('<span class="chip warn">需重启</span>');
@@ -113,6 +116,20 @@ function optChipsHtml(it){
   return ch.join('');
 }
 function optRowHtml(it, ix){
+  /* 跳转指引行（2026-11-12 误报治理第二批）：没有勾选框、不进待应用队列，
+     点「去设置」由后端 OpenOptGuide 打开 Windows 自带设置页（ms-settings: / windowsdefender:）。
+     点行内其它位置无动作 —— 它根本不是开关。 */
+  if(it.guide){
+    return '<div class="opt-row guide" data-opt="' + optEsc(it.id) + '"'
+      + ' style="animation-delay:' + Math.min((ix || 0) * 14, 180) + 'ms"'
+      + ' title="点一下打开 Windows 自带设置页手动调整"'
+      + '><span class="opt-row-t"><span class="opt-row-n">' + optEsc(it.name) + '</span>'
+      +   (it.desc ? '<span class="opt-row-d">' + optEsc(it.desc) + '</span>' : '')
+      + '</span>'
+      + '<span class="opt-chips">' + optChipsHtml(it) + '</span>'
+      + '<button class="btn sm opt-go" data-optguide="' + optEsc(it.id) + '">去设置</button>'
+      + '</div>';
+  }
   var done = !!it.optimized, sel = !!OPT_SEL[it.id] && !done;
   var tip = done ? '点一下还原这一项' : (sel ? '点一下取消勾选' : '点一下勾上，之后再点「应用」');
   return '<div class="opt-row' + (done ? ' done' : (sel ? ' sel' : '')) + '" data-opt="' + optEsc(it.id) + '"'
@@ -211,6 +228,7 @@ window.renderOpt = function(){
     + '<div class="opt-hero-r">'
     +   '<span class="chip">基本预设 ' + c.basic + '</span>'
     +   '<span class="chip">深度预设 ' + c.deep + '</span>'
+    +   (c.guide ? '<span class="chip">跳转指引 ' + c.guide + '</span>' : '')
     +   (c.reboot ? '<span class="chip warn">需重启 ' + c.reboot + ' 项</span>' : '')
     + '</div>'
   + '</div>';
@@ -309,7 +327,7 @@ function optSyncSide(){
 }
 function optToggle(id, on){
   var it = optById(id);
-  if(!it || it.optimized) return;
+  if(!it || it.optimized || it.guide) return; /* 跳转指引项没有「勾上」这个概念 */
   if(on) OPT_SEL[id] = true; else delete OPT_SEL[id];
   var row = optRowEl(id);
   if(row){
@@ -336,17 +354,17 @@ function optPreset(which){
   var n = 0;
   OPT.forEach(function(it){
     var inPre = (which === 'basic') ? it.basic : it.deep;
-    if(inPre && !it.optimized){ OPT_SEL[it.id] = true; n++; }
+    if(inPre && !it.optimized && !it.guide){ OPT_SEL[it.id] = true; n++; }
   });
   render();
   toast(n ? ('已按「' + (which === 'basic' ? '基本' : '深度') + '预设」勾选 ' + n + ' 项，点右下角「应用」生效')
           : '该预设里的项都已经优化过了，没有要应用的', n ? 'info' : 'ok');
 }
-/* 「全选」= 勾上当前筛选/搜索出来的全部项（不含已优化的） */
+/* 「全选」= 勾上当前筛选/搜索出来的全部项（不含已优化的，也不含跳转指引项——它们不可勾） */
 function optSelectAll(){
   var n = 0;
   optGroups().forEach(function(g){
-    g.items.forEach(function(it){ if(!it.optimized){ OPT_SEL[it.id] = true; n++; } });
+    g.items.forEach(function(it){ if(!it.optimized && !it.guide){ OPT_SEL[it.id] = true; n++; } });
   });
   if(!n){ toast('当前列表里没有可勾选的项', 'info'); return; }
   render();
@@ -452,6 +470,13 @@ function optRestoreAll(){
   document.getElementById('optOk').onclick = function(){ closeModal(); doIt(); };
 }
 
+/* 跳转指引行的公共动作：整行 / chip / 「去设置」按钮都走这里（后端 OpenOptGuide 打开系统设置页） */
+function optOpenGuide(id){
+  callGo('OpenOptGuide', id).then(function(r){
+    if(r) toast('打开设置页失败：' + r, 'danger');
+  }).catch(function(e){ toast('打开设置页失败：' + e, 'danger'); });
+}
+
 /* ── 事件绑定 ───────────────────────────────────────────────────────────── */
 /* 一律**事件委托挂在 #content**（只换它的 innerHTML，这个容器本身永不重建）：
    整页 render() 之后按钮还是活的，不需要每次重新绑定 —— 这是本项目定下的做法。 */
@@ -475,10 +500,17 @@ window.bindOpt = function(){
     if(t.closest('[data-optall]')){ optSelectAll(); return; }
     if(t.closest('[data-optreset]')){ optReset(); return; }
 
+    /* 「去设置」按钮：交给后端 OpenOptGuide 打开 Windows 自带设置页。
+       必须放在 .opt-row 判断之前 —— 按钮本身就在行里面。
+       2026-11-12 用户实测反馈：整行可点（chip / 标题 / 副标题点哪都开），不止按钮。 */
+    var gg = t.closest('[data-optguide]');
+    if(gg){ optOpenGuide(gg.getAttribute('data-optguide')); return; }
+
     var row = t.closest('.opt-row');
     if(row){
       var id = row.getAttribute('data-opt'), it = optById(id);
       if(!it) return;
+      if(it.guide){ optOpenGuide(id); return; }        /* 跳转指引行：点行内任意位置 = 打开设置页 */
       if(it.optimized){ optAskRestoreOne(id); return; }   /* 已优化的：点一下 = 还原这一项 */
       optToggle(id, !OPT_SEL[id]);
       return;

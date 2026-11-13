@@ -67,20 +67,6 @@ func init() {
 	}, toolImpl{Steps: []toolStep{{exe: "dism.exe", args: []string{"/Online", "/Cleanup-Image", "/ScanHealth"}}}})
 
 	regTool(ToolItem{
-		ID: "fix-boot", Cat: "fix", Name: "系统引导修复",
-		Desc: "重建主引导记录、引导扇区与启动配置数据 (BCD)",
-		Cmd:  "bootrec /fixmbr + /fixboot + /rebuildbcd", Risk: "caution", Danger: true, Backup: true, Timeout: 600,
-		Note:      "仅在开机出现「找不到操作系统」「引导失败」时使用。执行前会自动导出当前引导配置备份。",
-		Reboot:    true,
-		RebootMsg: "引导配置的改动在下次开机时才会被使用，建议尽快重启并确认能正常进入系统",
-	}, toolImpl{Steps: []toolStep{
-		{title: "修复主引导记录 (MBR)", exe: "bootrec.exe", args: []string{"/fixmbr"}},
-		{title: "修复引导扇区", exe: "bootrec.exe", args: []string{"/fixboot"}},
-		// bootrec /rebuildbcd 是交互式的，需喂入选择；A = 全部添加，不喂会一直等输入
-		{title: "重建启动配置数据 (BCD)", exe: "bootrec.exe", args: []string{"/rebuildbcd"}, stdin: "A\r\n"},
-	}})
-
-	regTool(ToolItem{
 		ID: "fix-bcd", Cat: "fix", Name: "引导配置查看",
 		Desc: "列出所有启动项与引导参数，排查开机故障",
 		Cmd:  "bcdedit /enum all", Risk: "readonly", OutText: true, Timeout: 60,

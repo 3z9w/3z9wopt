@@ -54,5 +54,37 @@ func init() {
 			Restore: []OptAction{
 				{Kind: "regdelete", Key: `HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Search`, Value: "SearchboxTaskbarMode"}},
 		},
+		OptItem{
+			// 2026-11-12 采纳（豆包 27 条对照新增）：「最佳性能」基底 + 保留缩略图/字体平滑/拖动内容显示。
+			// VisualFXSetting=3（自定义）+ UserPreferencesMask 压掉动画类效果（90,12,03,80,10,00,00,00
+			// 为社区多年实证配方）；注销或重启资源管理器后完全生效。还原回「让 Windows 选择」。
+			ID: "explorer-33", Cat: "explorer", CatName: "外观/资源管理器",
+			Name:     "33、视觉效果调整为最佳性能",
+			CheckKey: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects`, CheckValue: "VisualFXSetting", Optimized: "3",
+			Basic: false, Deep: true,
+		New: true,
+			Optimize: []OptAction{
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects`, Value: "VisualFXSetting", Vtype: "REG_DWORD", Data: "3"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "UserPreferencesMask", Vtype: "REG_BINARY", Data: "90,12,03,80,10,00,00,00"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop\WindowMetrics`, Value: "MinAnimate", Vtype: "REG_SZ", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "TaskbarAnimations", Vtype: "REG_DWORD", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "IconsOnly", Vtype: "REG_DWORD", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "ListviewAlphaSelect", Vtype: "REG_DWORD", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "ListviewShadow", Vtype: "REG_DWORD", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "FontSmoothing", Vtype: "REG_SZ", Data: "2"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "FontSmoothingType", Vtype: "REG_DWORD", Data: "2"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "DragFullWindows", Vtype: "REG_SZ", Data: "1"}},
+			Restore: []OptAction{
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects`, Value: "VisualFXSetting", Vtype: "REG_DWORD", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "UserPreferencesMask", Vtype: "REG_BINARY", Data: "9E,3E,07,80,12,00,00,00"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop\WindowMetrics`, Value: "MinAnimate", Vtype: "REG_SZ", Data: "1"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "TaskbarAnimations", Vtype: "REG_DWORD", Data: "1"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "IconsOnly", Vtype: "REG_DWORD", Data: "0"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "ListviewAlphaSelect", Vtype: "REG_DWORD", Data: "1"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`, Value: "ListviewShadow", Vtype: "REG_DWORD", Data: "1"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "FontSmoothing", Vtype: "REG_SZ", Data: "2"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "FontSmoothingType", Vtype: "REG_DWORD", Data: "2"},
+				{Kind: "regwrite", Key: `HKEY_CURRENT_USER\Control Panel\Desktop`, Value: "DragFullWindows", Vtype: "REG_SZ", Data: "1"}},
+		},
 	)
 }

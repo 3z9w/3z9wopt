@@ -393,199 +393,6 @@
     }
   },
   {
-    "id": "fix-boot",
-    "cat": "fix",
-    "name": "系统引导修复",
-    "desc": "重建主引导记录、引导扇区与启动配置数据 (BCD)",
-    "cmd": "bootrec /fixmbr + /fixboot + /rebuildbcd",
-    "risk": "caution",
-    "long": false,
-    "danger": true,
-    "backup": true,
-    "outText": false,
-    "note": "仅在开机出现「找不到操作系统」「引导失败」时使用。执行前会自动导出当前引导配置备份。",
-    "argKind": "",
-    "argLabel": "",
-    "argHint": "",
-    "argDef": "",
-    "argReq": false,
-    "timeout": 600,
-    "reboot": true,
-    "rebootMsg": "引导配置的改动在下次开机时才会被使用，建议尽快重启并确认能正常进入系统",
-    "recommend": false,
-    "impl": "steps",
-    "steps": {
-      "": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ],
-      "8080": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ],
-      "C:": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ],
-      "D:": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ],
-      "s:60": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ],
-      "taskmgr": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ],
-      "www.baidu.com": [
-        {
-          "title": "修复主引导记录 (MBR)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixmbr"
-          ]
-        },
-        {
-          "title": "修复引导扇区",
-          "exe": "bootrec.exe",
-          "args": [
-            "/fixboot"
-          ]
-        },
-        {
-          "title": "重建启动配置数据 (BCD)",
-          "exe": "bootrec.exe",
-          "args": [
-            "/rebuildbcd"
-          ],
-          "stdin": "A\r\n"
-        }
-      ]
-    }
-  },
-  {
     "id": "fix-bcd",
     "cat": "fix",
     "name": "引导配置查看",
@@ -980,14 +787,14 @@
     "id": "net-speed",
     "cat": "net",
     "name": "宽带测速",
-    "desc": "下载 / 上传带宽 + 延迟抖动丢包，自动挑最快节点，实时速度曲线",
-    "cmd": "多线程并发测速（内置国内镜像 + Cloudflare 节点）",
+    "desc": "",
+    "cmd": "",
     "risk": "safe",
     "long": true,
     "danger": false,
     "backup": false,
     "outText": false,
-    "note": "测速会消耗几十 MB 流量；用 WiFi 建议靠近路由器，测速时别同时下载东西，结果才准。",
+    "note": "",
     "argKind": "speedtest",
     "argLabel": "",
     "argHint": "",
@@ -1203,37 +1010,6 @@
     "argKind": "text",
     "argLabel": "端口",
     "argHint": "留空 = 列出所有监听端口，例如 8080",
-    "argDef": "",
-    "argReq": false,
-    "timeout": 60,
-    "reboot": false,
-    "recommend": false,
-    "impl": "custom",
-    "steps": {
-      "": [],
-      "8080": [],
-      "C:": [],
-      "D:": [],
-      "s:60": [],
-      "taskmgr": [],
-      "www.baidu.com": []
-    }
-  },
-  {
-    "id": "net-hosts",
-    "cat": "net",
-    "name": "Hosts 文件编辑",
-    "desc": "打开 hosts 文件（屏蔽域名 / 本地调试），改动前自动备份",
-    "cmd": "备份 + 打开 %windir%\\System32\\drivers\\etc\\hosts",
-    "risk": "caution",
-    "long": false,
-    "danger": true,
-    "backup": false,
-    "outText": false,
-    "note": "保存后可能需执行「DNS 缓存刷新」才生效。",
-    "argKind": "",
-    "argLabel": "",
-    "argHint": "",
     "argDef": "",
     "argReq": false,
     "timeout": 60,

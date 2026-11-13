@@ -16,16 +16,18 @@ import (
 
 func TestToolCatalogIntegrity(t *testing.T) {
 	buildCatalog()
-	if len(toolCatalog) != 34 { // 2026-09-22 +1：fix 类新增「创建系统还原点」（优化前的后路）
-		t.Fatalf("工具总数应为 34，实际 %d", len(toolCatalog))
+	if len(toolCatalog) != 32 { // 2026-11-12 -2：误报治理删除「Hosts 文件编辑」「系统引导修复」
+		t.Fatalf("工具总数应为 32，实际 %d", len(toolCatalog))
 	}
 	// 分类数量分布（与前端展示的口径一致）
-	want := map[string]int{"fix": 12, "net": 7, "disk": 4, "info": 5, "util": 6}
+	want := map[string]int{"fix": 11, "net": 6, "disk": 4, "info": 5, "util": 6}
 	got := map[string]int{}
 
 	seen := map[string]bool{}
 	for _, it := range toolCatalog {
-		if it.ID == "" || it.Name == "" || it.Desc == "" || it.Cmd == "" {
+		// Desc/Cmd 允许为空的唯一例外：speedtest（2026-11-12 用户拍板删文案，窗口让给仪表盘）
+		noCopy := it.ArgKind == "speedtest"
+		if it.ID == "" || it.Name == "" || (!noCopy && (it.Desc == "" || it.Cmd == "")) {
 			t.Fatalf("工具字段不完整：%+v", it)
 		}
 		if seen[it.ID] {
@@ -141,6 +143,7 @@ func TestToolRegistryGuards(t *testing.T) {
 
 // 高风险操作的保护措施（2026-09-21 用户拍板：二次确认 + 自动备份引导配置）
 func TestToolDangerGuards(t *testing.T) {
+	buildCatalog() // 独立可跑：不依赖其他测试先建目录（sync.Once 幂等）
 	find := func(id string) *ToolItem {
 		for i := range toolCatalog {
 			if toolCatalog[i].ID == id {
@@ -150,12 +153,17 @@ func TestToolDangerGuards(t *testing.T) {
 		t.Fatalf("找不到工具 %s", id)
 		return nil
 	}
-	boot := find("fix-boot")
-	if !boot.Danger || !boot.Backup {
-		t.Fatal("「系统引导修复」必须同时具备二次确认(Danger)与自动备份(Backup)")
+	// v1.2.0 误报治理：Hosts 两项与「系统引导修复」整卡已删除（用户拍板「前后端一起删干净」），
+	// 本测试改为锁死删除结果，防止日后被重新加回来。
+	for _, gone := range []string{"net-hosts", "fix-boot"} {
+		for i := range toolCatalog {
+			if toolCatalog[i].ID == gone {
+				t.Fatalf("工具 %s 已删除，不应再出现在目录里", gone)
+			}
+		}
 	}
 	// 会改系统设置的都要弹确认
-	for _, id := range []string{"fix-update", "fix-update-remove", "net-hosts"} {
+	for _, id := range []string{"fix-update", "fix-update-remove"} {
 		if !find(id).Danger {
 			t.Fatalf("工具 %s 会修改系统设置，必须带二次确认", id)
 		}
@@ -186,25 +194,19 @@ func stepsOf(id, arg string) []toolStep {
 	return impl.Steps
 }
 
-// 引导修复必须包含三条修复命令；net-reset 已并入 net-smart 集成面板（winsock / tcpip 成为其子动作），
-// 这里改锁新现实：昨晚新增的 5 个工具必须在册、net-smart 必须挂推荐、推荐总数 1~5。
+// v1.2.0 误报治理：引导写入类命令已彻底删除，这里锁住「工具库里不允许再出现引导修复命令原文」。
 func TestToolPlans(t *testing.T) {
-	boot := stepsOf("fix-boot", "")
-	if len(boot) != 3 {
-		t.Fatalf("引导修复应包含 3 条命令，实际 %d", len(boot))
+	buildCatalog()
+	if got := stepsOf("fix-boot", ""); len(got) != 0 {
+		t.Fatalf("fix-boot 已删除，不应还有执行步骤，实际 %d 条", len(got))
 	}
-	joined := ""
-	for _, s := range boot {
-		joined += s.exe + " " + strings.Join(s.args, " ") + "|"
-	}
-	for _, k := range []string{"/fixmbr", "/fixboot", "/rebuildbcd"} {
-		if !strings.Contains(joined, k) {
-			t.Fatalf("引导修复缺少 %s", k)
+	for _, it := range toolCatalog {
+		joined := it.Cmd + it.Desc + it.Note
+		for _, k := range []string{"/fixmbr", "/fixboot", "/rebuildbcd"} {
+			if strings.Contains(joined, k) {
+				t.Fatalf("工具 %s 仍残留引导修复命令原文 %s", it.ID, k)
+			}
 		}
-	}
-	// rebuildbcd 是交互式的，必须喂入选择，否则会卡住等输入
-	if boot[2].stdin == "" {
-		t.Fatal("bootrec /rebuildbcd 需要喂入选择，否则会卡住")
 	}
 
 	// net-reset 已并入 net-smart 集成面板（winsock / tcpip 成为子动作，见 tools_net.go）

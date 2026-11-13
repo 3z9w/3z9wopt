@@ -33,7 +33,7 @@ type JunkItem struct {
 	Name  string `json:"name"`
 	Desc  string `json:"desc"`
 	Risk  string `json:"risk"` // ""=安全  "warn"=谨慎
-	Cmd   string `json:"cmd"`  // 命令型: recycle/dismreset/vss/evtx/winold/reg:xxx，目录型为空
+	Cmd   string `json:"cmd"`  // 命令型: recycle/dismreset/reg:xxx，目录型为空
 
 	// Impact：这一项清理时属于哪一类动作。**标记由后端给，前端不许按 ID 写死。**
 	// ⚠️ 只有 "explorer" 会在动手前弹窗确认（屏幕会短暂黑屏，必须提前说一声）；
@@ -88,11 +88,18 @@ type JunkItem struct {
 	DeniedBytes int64 `json:"deniedBytes,omitempty"`
 	DeniedFiles int   `json:"deniedFiles,omitempty"`
 
+	// Unread：本项里有 N 个目录**本次没读到**（被占用 / 权限不足，见 walkSizeFast）。
+	// 这部分体积一个字节都没进 Bytes —— 数字是**偏小**的，不是准确值。
+	// 2026-11-12 修「数字跳变」：同一目录清完 12 MB → 重扫 663 MB，就是读不动的
+	// 子树被静默按 0 计账、锁一放开又冒出来造成的。以前不留痕，用户只会觉得数字瞎跳；
+	// 现在把「没量到」如实上报，宁可见小数+提示，不假装量准了。
+	// ⚠️ 同样只是显示口径：不影响扫描/删除范围。
+	Unread int `json:"unread,omitempty"`
+
 	// Na：默认**不勾选**，要用户自己手动勾上才清（2026-10-14 加）。
 	// 判据：**删了不可逆，或者那些本来就是用户自己的东西** —— 一键清理不该替用户做这种决定。
 	//   Cookies / 浏览历史（清空后所有网站要重新登录、历史找不回来）、
 	//   QQ 与微信接收的文件（别人发来的真实文件）、本地大模型权重（数 GB，删了要重下）、
-	//   Windows.old / 系统还原点（删了无法回退、无法恢复系统）、Defender 隔离区、
 	//   Office 安装源 / Installer 补丁缓存（删了无法修复或卸载更新）、
 	//   全盘零散垃圾（.bak/.old 很可能就是你自己的备份）、驱动解压残留、损坏应用包、
 	//   WinSxS /ResetBase（清完连已装的更新都无法卸载）。
@@ -100,11 +107,24 @@ type JunkItem struct {
 	// 🔴 与 Heavy 是两回事：Heavy 只决定"显示时算哪一行"，Na 才决定默认勾不勾。
 	Na bool `json:"na,omitempty"`
 
+	// DefOff：**扫描完成后默认不勾**（2026-11-12 加，只给 recycleother 用）。
+	// 与 Na 的区别要说清，别混：
+	//   Na      = 「不替用户做这个决定」，理想语义是默认不勾（但前端目前只读 empty，实际没生效，
+	//             见 junk_na_real_test.go 的注释 —— 那是历史遗留，本次不动它）；
+	//   DefOff  = 「扫描时照扫（选分类页两项都勾着），扫完把这一项**取消勾选**」，
+	//             但仍然留在结果页上、数字照给，用户想清随时勾上。
+	// 为什么要它：其他账户的回收站默认清 = 替用户删别人的东西；默认不清又必须让用户看得见
+	// 有多大体量。所以「扫到但不选」才是准确表达。
+	// ⚠️ 只影响「扫描后的默认勾选」，不影响扫描范围（选分类页仍然是勾着的）。
+	DefOff bool `json:"defOff,omitempty"`
+
 	dirs    []string // 固定目录（清空内容，保留目录本身）
 	globs   []string // 动态枚举模式，支持 * 单段通配、** 任意深度、文件名通配
 	excl    []string // 解析结果排除（路径包含任一子串则丢弃）
 	files   []string // 固定单文件
 	require []string // 自适应门槛：任一路径存在才扫描/显示（「按已装软件出列表」）
+	gofind  []string   // 数据根发现（junk_findroots.go）：软件装在自定义盘/路径时的兜底，产出也是 glob
+	finds   []findSpec // 数据化搜索声明（ini 的 findN 键）：同一套全盘搜索，但不用写 Go 代码
 
 	// —— v1.1 新增：全选去重 ——
 	targets []string         // 本次扫描实际解析到的目标路径（去重合计用）
@@ -187,13 +207,11 @@ func electronCacheGlobs(bases ...string) []string {
 func junkItems() []JunkItem {
 	L := os.Getenv("LOCALAPPDATA")
 	R := os.Getenv("APPDATA")
-	U := os.Getenv("USERPROFILE")
-	LL := filepath.Join(U, `AppData\LocalLow`)
 	PD := os.Getenv("ProgramData")
 	W := os.Getenv("windir")
-	PF := os.Getenv("ProgramFiles")
-	PFX := os.Getenv("ProgramFiles(x86)")
-	docs := filepath.Join(U, "Documents")
+	/* 2026-11-12 规则化后 LL / PF / PFX / docs 不再被静态项引用
+	  （用到它们的 51 项全部迁入 rules/junkrules.ini，变量名换成 %LocalLow% /
+	   %ProgramFiles% / %ProgramFiles86% / %Documents%）。 */
 
 	items := []JunkItem{
 		// ===== 临时文件 =====
@@ -208,6 +226,15 @@ func junkItems() []JunkItem {
 		   界面上就成了"临时文件 1.0 GB"，而其中 1012 MB 根本不是临时文件、是回收站 ——
 		   用户看着会以为系统临时目录里堆了 1 GB，实际只有几十 MB。这是误导，不是显示技巧。 */
 		{ID: "recycle", Group: "回收站", Name: "回收站", Desc: "已删除文件的存放区，清空后不可恢复", Risk: "warn", Cmd: "recycle"},
+		/* 2026-11-12 用户拍板：其他账户的回收站**既不能装作不存在，也不能替用户默认删**。
+		   做法是单独成一项、照常扫描、数字照给，但扫描完**默认不勾** —— 要清得用户自己勾。
+		   扫到多少与默认选多少都摆在界面上（「扫到 X · 已选 Y」），决定权在用户手里。
+		   范围护栏见 junk_clean.go 的 orphanRecycleDirs / clearRecycleSIDDir：
+		   只认「标准用户 SID + 本机账户列表里查无此人 + 非当前账户 + 非链接目录」。
+		   Desc 会在扫描后被 recycleOtherMeasure 换成带真实体积的版本。 */
+		{ID: "recycleother", Group: "回收站", Name: "回收站（其他账户残留）",
+			Desc: "其他账户或已删除账户留下的残留，本机已没有对应账户；勾选后永久删除、无法恢复",
+			Risk: "warn", Cmd: "recycleother", DefOff: true},
 		/* cleanmgr（系统磁盘清理）**整项已删除**（2026-10-14 用户拍板）：
 		   它清的东西我们已覆盖八成（临时文件/回收站/更新缓存/缩略图/着色器/错误报告/传递优化/Windows.old），
 		   剩下两成是旧驱动包与未使用语言包 —— 那两块在 DriverStore / WinSxS，
@@ -269,296 +296,17 @@ func junkItems() []JunkItem {
 			dirs: []string{filepath.Join(W, "Logs")}},
 		{ID: "svclogs", Group: "日志与注册表", Name: "系统服务日志", Desc: "System32\\LogFiles 下各服务运行日志，被占用自动跳过",
 			dirs: []string{filepath.Join(W, `System32\LogFiles`)}},
-		{ID: "evtx", Group: "日志与注册表", Name: "事件日志", Desc: "清空 Application/System/Security/Setup 四类事件日志", Risk: "warn", Cmd: "evtx"},
 		// v1.1：不再写死 C 盘，所有固定盘都扫（IIS 装在 D/E 盘也能扫到）
 		{ID: "iis", Group: "日志与注册表", Name: "IIS 日志", Desc: "IIS 网站访问日志（所有磁盘，未装 IIS 则为空）",
 			dirs: allDrivesSub(`inetpub\logs`)},
-		{ID: "defender", Group: "深度清理", Name: "Defender 历史与隔离区", Desc: "扫描历史记录与隔离的威胁文件", Risk: "warn",
-			dirs: []string{
-				filepath.Join(PD, `Microsoft\Windows Defender\Scans\History`),
-				filepath.Join(PD, `Microsoft\Windows Defender\Quarantine`),
-			}},
 
-		// ===== 浏览器缓存 =====
-		{ID: "edgecache", Group: "浏览器缓存", Name: "Edge 浏览器缓存", Desc: "所有配置文件的网页/脚本/GPU 缓存、Service Worker 缓存、组件更新包缓存（component_crx），不影响收藏与密码",
-			globs: []string{
-				filepath.Join(L, `Microsoft\Edge\User Data\*\Cache`),
-				filepath.Join(L, `Microsoft\Edge\User Data\*\Code Cache`),
-				filepath.Join(L, `Microsoft\Edge\User Data\*\GPUCache`),
-				filepath.Join(L, `Microsoft\Edge\User Data\*\Service Worker\CacheStorage`),
-				filepath.Join(L, `Microsoft\Edge\User Data\*\Service Worker\ScriptCache`),
-				filepath.Join(L, `Microsoft\Edge\User Data\component_crx_cache`),
-				filepath.Join(L, `Microsoft\Edge\User Data\GrShaderCache`),
-				filepath.Join(L, `Microsoft\Edge\User Data\ShaderCache`),
-			}},
-		{ID: "edgeai", Group: "浏览器缓存", Name: "Edge AI 组件数据", Desc: "Edge 智能功能下载的图像溯源/AI 模型数据（ProvenanceData），删除后用到时会自动重新下载", Risk: "warn",
-			require: []string{filepath.Join(L, `Microsoft\Edge\User Data`)},
-			dirs: []string{
-				filepath.Join(L, `Microsoft\Edge\User Data\ProvenanceData`),
-				filepath.Join(L, `Microsoft\Edge\User Data\ProvenanceDataTensors`),
-			}},
-		{ID: "chromecache", Group: "浏览器缓存", Name: "Chrome 浏览器缓存", Desc: "所有配置文件的网页/脚本/GPU 缓存、Service Worker 缓存、组件更新包缓存（component_crx），不影响收藏与密码",
-			require: []string{filepath.Join(L, "Google", "Chrome")},
-			globs: []string{
-				filepath.Join(L, `Google\Chrome\User Data\*\Cache`),
-				filepath.Join(L, `Google\Chrome\User Data\*\Code Cache`),
-				filepath.Join(L, `Google\Chrome\User Data\*\GPUCache`),
-				filepath.Join(L, `Google\Chrome\User Data\*\Service Worker\CacheStorage`),
-				filepath.Join(L, `Google\Chrome\User Data\*\Service Worker\ScriptCache`),
-				filepath.Join(L, `Google\Chrome\User Data\component_crx_cache`),
-				filepath.Join(L, `Google\Chrome\User Data\GrShaderCache`),
-				filepath.Join(L, `Google\Chrome\User Data\ShaderCache`),
-			}},
-		{ID: "chromium", Group: "浏览器缓存", Name: "其他 Chromium 浏览器缓存", Desc: "自动枚举 360/QQ/Brave/Vivaldi 等 Chromium 系浏览器",
-			globs: []string{
-				filepath.Join(L, `**\User Data\Default\Cache`),
-				filepath.Join(L, `**\User Data\Default\GPUCache`),
-			},
-			excl: []string{`\google\`, `\microsoft\`}},
-		{ID: "firefox", Group: "浏览器缓存", Name: "Firefox 浏览器缓存", Desc: "自动枚举所有配置文件的 cache2 缓存",
-			globs: []string{
-				filepath.Join(R, `Mozilla\Firefox\Profiles\*\cache2`),
-				filepath.Join(L, `Mozilla\Firefox\Profiles\*\cache2`),
-			}},
-		{ID: "iecache", Group: "浏览器缓存", Name: "IE / 系统网页缓存", Desc: "INetCache 网页缓存与老式 IE 临时目录（UWP 应用共用）",
-			dirs: []string{
-				filepath.Join(L, `Microsoft\Windows\INetCache`),
-				filepath.Join(L, `Microsoft\Windows\Temporary Internet Files`),
-			}},
-		{ID: "cookies", Group: "浏览器缓存", Name: "浏览器 Cookies", Desc: "清空后所有网站需要重新登录", Risk: "warn",
-			dirs: []string{filepath.Join(L, `Microsoft\Windows\INetCookies`)}},
-
-		// ===== 应用缓存（动态枚举；require=软件没装就不显示，2026-09-20 改为自适应） =====
-		{ID: "wpscache", Group: "应用缓存", Name: "WPS Office 缓存", Desc: "WPS 图片/文档缓存，不影响文档本身",
-			require: []string{filepath.Join(R, "kingsoft"), filepath.Join(L, "Kingsoft")},
-			dirs: []string{
-				filepath.Join(R, `kingsoft\wps\cache`),
-				filepath.Join(L, `Kingsoft\WPS Office\cache`),
-				filepath.Join(R, `Kingsoft\office6\cache`),
-			}},
-		{ID: "officecache", Group: "应用缓存", Name: "Office 文件缓存", Desc: "Office 上传中心文件缓存（15.0/16.0）",
-			require: []string{filepath.Join(L, "Microsoft", "Office")},
-			dirs: []string{
-				filepath.Join(L, `Microsoft\Office\16.0\OfficeFileCache`),
-				filepath.Join(L, `Microsoft\Office\15.0\OfficeFileCache`),
-			}},
-		{ID: "adobe", Group: "应用缓存", Name: "Adobe 媒体缓存", Desc: "PR/AE 等媒体缓存文件，可安全重建",
-			require: []string{filepath.Join(R, "Adobe"), filepath.Join(L, "Adobe")},
-			dirs: []string{
-				filepath.Join(R, `Adobe\Common\Media Cache Files`),
-				filepath.Join(L, `Adobe\Common\Media Cache Files`),
-			}},
-		{ID: "qqcache", Group: "应用缓存", Name: "QQ 缓存", Desc: "按账号自动枚举 QQ 临时文件与缓存",
-			require: []string{filepath.Join(R, "Tencent", "QQ"), filepath.Join(L, "Tencent", "QQ")},
-			globs: []string{
-				filepath.Join(R, `Tencent\QQ\*\Temp`),
-				filepath.Join(L, `Tencent\QQ\*\Cache`),
-			}},
-		{ID: "qqrecv", Group: "应用缓存", Name: "QQ 接收的文件", Desc: "按账号枚举 FileRecv 接收目录，含他人发来的文件，请确认无用再清", Risk: "warn",
-			require: []string{filepath.Join(docs, "Tencent Files")},
-			globs:   []string{filepath.Join(docs, `Tencent Files\*\FileRecv`)}},
-		{ID: "wechatcache", Group: "应用缓存", Name: "微信缓存", Desc: "按账号自动枚举微信 3.x/4.x 缓存与运行日志，不含聊天文件",
-			require: []string{filepath.Join(docs, "WeChat Files"), filepath.Join(docs, "xwechat_files"), filepath.Join(R, "Tencent", "WeChat"), filepath.Join(R, "Tencent", "xwechat")},
-			globs: []string{
-				filepath.Join(docs, `WeChat Files\*\FileStorage\Cache`),
-				filepath.Join(docs, `xwechat_files\*\FileStorage\Cache`),
-				filepath.Join(docs, `xwechat_files\*\cache`),
-				filepath.Join(R, `Tencent\WeChat\*\Cache`), // 老版微信 Roaming 缓存（脚本第 277 行）
-			},
-			dirs: []string{
-				// 2026-09-21 补微信 4.x Roaming 数据目录（实测 xwechat\log 82MB，旧定义完全没覆盖）
-				filepath.Join(R, `Tencent\xwechat\log`),
-				filepath.Join(R, `Tencent\xwechat\crashinfo`),
-			}},
-		{ID: "wechatrecv", Group: "应用缓存", Name: "微信接收的文件", Desc: "按账号枚举接收文件目录，含聊天中保存的文件，请确认无用再清", Risk: "warn",
-			require: []string{filepath.Join(docs, "WeChat Files"), filepath.Join(docs, "xwechat_files")},
-			globs: []string{
-				filepath.Join(docs, `WeChat Files\*\FileStorage\File`),
-				filepath.Join(docs, `xwechat_files\*\FileStorage\File`),
-			}},
-		{ID: "thunder", Group: "应用缓存", Name: "迅雷缓存", Desc: "按账号枚举迅雷下载引擎缓存，不含已下载文件",
-			require: []string{filepath.Join(R, "Thunder Network")},
-			globs:   []string{filepath.Join(R, `Thunder Network\Thunder\Profiles\*\Cache`)}},
-		{ID: "baidunet", Group: "应用缓存", Name: "百度网盘日志", Desc: "按账号枚举百度网盘运行日志与缓存",
-			require: []string{filepath.Join(R, "Baidu", "BaiduNetdisk")},
-			globs: []string{
-				filepath.Join(R, `Baidu\BaiduNetdisk\*\logs`),
-				filepath.Join(R, `baidu\BaiduNetdisk\users\*\logs`),
-			}},
-		{ID: "steam", Group: "应用缓存", Name: "Steam 日志", Desc: "Steam 客户端运行日志，不含游戏与下载",
-			require: []string{filepath.Join(PFX, "Steam"), filepath.Join(PF, "Steam")},
-			dirs: []string{
-				filepath.Join(PFX, `Steam\logs`),
-				filepath.Join(PF, `Steam\logs`),
-			}},
-		{ID: "java", Group: "应用缓存", Name: "Java 部署缓存", Desc: "Java Web Start / 小程序部署缓存",
-			require: []string{filepath.Join(LL, "Sun", "Java")},
-			dirs:    []string{filepath.Join(LL, `Sun\Java\Deployment\cache`)}},
-		{ID: "vscache", Group: "应用缓存", Name: "Visual Studio 缓存", Desc: "按版本枚举 VS 组件模型缓存，可安全重建",
-			require: []string{filepath.Join(L, "Microsoft", "VisualStudio")},
-			globs:   []string{filepath.Join(L, `Microsoft\VisualStudio\*\ComponentModelCache`)}},
-		{ID: "uwpcache", Group: "应用缓存", Name: "内置应用缓存", Desc: "按应用枚举 UWP/内置应用的网页与临时缓存",
-			globs: []string{
-				filepath.Join(L, `Packages\*\AC\INetCache`),
-				filepath.Join(L, `Packages\*\TempState`),
-			}},
-		{ID: "mediaplayer", Group: "应用缓存", Name: "Media Player 缓存", Desc: "媒体库与播放缓存",
-			dirs: []string{filepath.Join(L, `Microsoft\Media Player`)}},
-		{ID: "gamedvr", Group: "应用缓存", Name: "Game Bar 缓存", Desc: "Xbox Game Bar 录制缓存（不含已保存的视频）",
-			dirs: []string{filepath.Join(L, `Microsoft\GameDVR`)}},
-		{ID: "onedrivelog", Group: "应用缓存", Name: "OneDrive 日志", Desc: "OneDrive 同步运行日志",
-			require: []string{filepath.Join(L, "Microsoft", "OneDrive")},
-			dirs:    []string{filepath.Join(L, `Microsoft\OneDrive\logs`)}},
-		{ID: "netease", Group: "应用缓存", Name: "网易云音乐缓存", Desc: "在线播放/下载缓存与歌曲封面，不影响歌单、账户与本地音乐",
-			require: []string{filepath.Join(L, "NetEase")},
-			dirs: []string{
-				filepath.Join(L, `NetEase\CloudMusic\Cache`),
-				filepath.Join(R, `NetEase\CloudMusic\Cache`),
-			}},
-		{ID: "dingtalk", Group: "应用缓存", Name: "钉钉日志与头像缓存", Desc: "钉钉运行日志、钉盘升级包缓存与群头像缓存（头像自动重新下载）；不碰聊天记录数据库",
-			require: []string{filepath.Join(R, "DingTalk")},
-			dirs: []string{
-				filepath.Join(R, `DingTalk\log`),
-				// 2026-09-21 用户拍板扩充：升级包缓存 + 杂项日志（实测 DingpanSyncUpgrade 109MB）
-				filepath.Join(R, `DingTalk\DingpanSyncUpgrade`),
-				filepath.Join(R, `DingTalk\defEmotion`),
-				filepath.Join(R, `DingTalk\holmeslogs`),
-				filepath.Join(R, `DingTalk\updaterlogs`),
-				filepath.Join(R, `DingTalk\recordLog`),
-			},
-			globs: []string{filepath.Join(R, `DingTalk\*\AvatarFiles`)}},
-		{ID: "qqnt", Group: "应用缓存", Name: "QQ(NT) 缓存", Desc: "按账号枚举新版 QQ 的表情包缓存、搜索索引与日志（删后自动重新下载），不含聊天图片与文件", Risk: "warn",
-			require: []string{filepath.Join(docs, "Tencent Files"), filepath.Join(R, "Tencent", "QQ")},
-			globs: []string{
-				// 2026-09-21 补新版 QQ 真实数据目录：实测 nt_data 在 Documents\Tencent Files 下（Roaming\Tencent\QQ 只有 1MB 壳，导致此前显示"未发现"）
-				filepath.Join(docs, `Tencent Files\*\nt_qq\nt_data\Emoji`), // 表情包缓存（单账号实测 207MB）
-				filepath.Join(docs, `Tencent Files\*\nt_qq\nt_data\log`),   // 运行日志
-				filepath.Join(docs, `Tencent Files\*\nt_qq\nt_data\log-cache`),
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\Emoji`),  // 全局表情缓存（实测 152MB）
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\search`), // 搜索索引，可重建
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\PokeFace`),
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\WeatherBgCache`),
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\VasUpdateSystem`), // 皮肤/装扮更新包缓存
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\Skin`),
-				filepath.Join(docs, `Tencent Files\nt_qq\global\nt_data\Log`),
-				// 老探测位置保留兜底
-				filepath.Join(R, `Tencent\QQ\*\nt_qq\Cache`),
-				filepath.Join(R, `Tencent\QQ\*\nt_qq\Log`),
-			}},
-		{ID: "wegame", Group: "应用缓存", Name: "WeGame 日志", Desc: "WeGame 客户端运行日志，不含游戏与下载内容",
-			require: []string{filepath.Join(R, "Tencent", "WeGame")},
-			globs: []string{
-				filepath.Join(R, `Tencent\WeGame\log`),
-				filepath.Join(R, `Tencent\WeGame\*\log`),
-				filepath.Join(L, `WeGame\log`),
-			}},
-		{ID: "douyinplugin", Group: "应用缓存", Name: "抖音直播伴侣组件缓存", Desc: "直播推流插件（OBS 组件）下载的数据包，删除后下次开播会自动重新下载", Risk: "warn",
-			require: []string{filepath.Join(R, "douyin-plugins")},
-			globs:   []string{filepath.Join(R, `douyin-plugins\obsplus\**\*.hud`), filepath.Join(R, `douyin-plugins\obsplus\cache`)}},
-		{ID: "vscode", Group: "应用缓存", Name: "VS Code 缓存", Desc: "编辑器缓存与运行日志，不影响扩展与设置",
-			require: []string{filepath.Join(R, "Code")},
-			dirs:    []string{filepath.Join(R, `Code\logs`)},
-			globs: []string{
-				filepath.Join(R, `Code\Cache\*`), filepath.Join(R, `Code\CachedData\*`),
-				filepath.Join(R, `Code\GPUCache\*`), filepath.Join(R, `Code\Code Cache\*`),
-			}},
-		{ID: "discord", Group: "应用缓存", Name: "Discord 缓存", Desc: "聊天图片/网页缓存，不影响账户与消息记录",
-			require: []string{filepath.Join(R, "discord")},
-			globs: []string{
-				filepath.Join(R, `discord\Cache\*`), filepath.Join(R, `discord\Code Cache\*`),
-				filepath.Join(R, `discord\GPUCache\*`),
-			}},
-		{ID: "jetbrains", Group: "应用缓存", Name: "JetBrains IDE 缓存", Desc: "IDEA/PyCharm 等的索引与编译缓存，清后首次打开会重建索引，耗时稍长", Risk: "warn",
-			require: []string{filepath.Join(L, "JetBrains")},
-			globs:   []string{filepath.Join(L, `JetBrains\*\system\caches`)}},
-		{ID: "zoom", Group: "应用缓存", Name: "Zoom 日志", Desc: "Zoom 客户端运行日志",
-			require: []string{filepath.Join(R, "Zoom")},
-			dirs:    []string{filepath.Join(R, `Zoom\logs`), filepath.Join(L, `Zoom\logs`)}},
-
-		// ===== AI 应用缓存（2026-09-21 新增组：主流 AI 桌面端，require 门槛——没装的自动隐藏。
-		//      差异化卖点：传统清理工具对 AI 应用覆盖极浅（同机对比：豆包某同类工具扫出 52KB，实际可清约 280MB） =====
-		{ID: "doubao", Group: "AI 应用缓存", Name: "豆包缓存", Desc: "桌面版网页缓存、资源包缓存(gecko)与热修包，删除后自动重新下载，不影响账号与对话记录",
-			require: []string{filepath.Join(L, "Doubao")},
-			globs: append(electronCacheGlobs(filepath.Join(L, `Doubao\User Data`)),
-				filepath.Join(L, `Doubao\User Data\gecko_cache`),
-				filepath.Join(L, `Doubao\User Data\hot_fix`),
-				filepath.Join(L, `Doubao\User Data\BrowserMetrics`),
-				filepath.Join(L, `Doubao\User Data\BrowserMetrics-spare.pma`))},
-		{ID: "jianying", Group: "AI 应用缓存", Name: "剪映缓存", Desc: "模板/素材缓存、临时文件与代理文件（含 AI 素材），删除后按需重新下载；不碰草稿与工程文件",
-			require: []string{filepath.Join(R, "JianyingPro"), filepath.Join(L, "JianyingPro")},
-			dirs: []string{
-				filepath.Join(R, `JianyingPro\Cache`),
-				filepath.Join(L, `JianyingPro\Temp`),
-				filepath.Join(L, `JianyingPro\Proxy`),
-			}},
-		{ID: "kimi", Group: "AI 应用缓存", Name: "Kimi 缓存", Desc: "Kimi 桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(R, "Kimi"), filepath.Join(L, "Kimi")},
-			globs:   electronCacheGlobs(filepath.Join(R, "Kimi"), filepath.Join(L, "Kimi"))},
-		{ID: "yuanbao", Group: "AI 应用缓存", Name: "腾讯元宝缓存", Desc: "腾讯元宝桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(R, `Tencent\Yuanbao`), filepath.Join(L, "Yuanbao"), filepath.Join(R, "Yuanbao")},
-			globs:   electronCacheGlobs(filepath.Join(R, `Tencent\Yuanbao`), filepath.Join(L, "Yuanbao"), filepath.Join(R, "Yuanbao"))},
-		{ID: "tongyi", Group: "AI 应用缓存", Name: "通义千问缓存", Desc: "通义千问桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(L, "TongyiAPP"), filepath.Join(L, "Tongyi"), filepath.Join(R, "Tongyi"), filepath.Join(R, "TongyiAPP")},
-			globs:   electronCacheGlobs(filepath.Join(L, "TongyiAPP"), filepath.Join(L, "Tongyi"), filepath.Join(R, "Tongyi"), filepath.Join(R, "TongyiAPP"))},
-		{ID: "wenxin", Group: "AI 应用缓存", Name: "文心一言缓存", Desc: "文心一言桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(L, `Baidu\Wenxin`), filepath.Join(L, "Wenxin"), filepath.Join(R, "Wenxin"), filepath.Join(L, "ERNIEBot")},
-			globs:   electronCacheGlobs(filepath.Join(L, `Baidu\Wenxin`), filepath.Join(L, "Wenxin"), filepath.Join(R, "Wenxin"), filepath.Join(L, "ERNIEBot"))},
-		{ID: "xinghuo", Group: "AI 应用缓存", Name: "讯飞星火缓存", Desc: "讯飞星火桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(L, "Xinghuo"), filepath.Join(R, "Xinghuo"), filepath.Join(L, "SparkDesk"), filepath.Join(R, "SparkDesk")},
-			globs:   electronCacheGlobs(filepath.Join(L, "Xinghuo"), filepath.Join(R, "Xinghuo"), filepath.Join(L, "SparkDesk"), filepath.Join(R, "SparkDesk"))},
-		{ID: "jimeng", Group: "AI 应用缓存", Name: "即梦缓存", Desc: "即梦桌面版网页缓存与资源包缓存（AI 绘图/视频素材），删除后自动重新下载",
-			require: []string{filepath.Join(L, "Jimeng"), filepath.Join(R, "Jimeng")},
-			globs: append(electronCacheGlobs(filepath.Join(L, `Jimeng\User Data`), filepath.Join(L, "Jimeng"), filepath.Join(R, "Jimeng")),
-				filepath.Join(L, `Jimeng\User Data\gecko_cache`),
-				filepath.Join(L, `Jimeng\User Data\hot_fix`))},
-		{ID: "chatgpt", Group: "AI 应用缓存", Name: "ChatGPT 桌面版缓存", Desc: "ChatGPT Windows 客户端网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(L, "ChatGPT"), filepath.Join(R, "ChatGPT")},
-			globs:   electronCacheGlobs(filepath.Join(L, "ChatGPT"), filepath.Join(R, "ChatGPT"))},
-		{ID: "claude", Group: "AI 应用缓存", Name: "Claude 桌面版缓存", Desc: "Claude 桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(R, "AnthropicClaude"), filepath.Join(L, "AnthropicClaude")},
-			globs:   electronCacheGlobs(filepath.Join(R, "AnthropicClaude"), filepath.Join(L, "AnthropicClaude"))},
-		{ID: "cursor", Group: "AI 应用缓存", Name: "Cursor 缓存", Desc: "AI 代码编辑器的缓存与运行日志，不影响扩展、设置与项目",
-			require: []string{filepath.Join(R, "Cursor")},
-			dirs:    []string{filepath.Join(R, `Cursor\logs`)},
-			globs:   electronCacheGlobs(filepath.Join(R, "Cursor"))},
-		{ID: "aimodels", Group: "AI 应用缓存", Name: "本地大模型缓存", Desc: "Ollama / LM Studio 下载的本地模型权重（动辄数 GB），删除后下次使用需重新下载；不用本地大模型才建议清", Risk: "warn",
-			require: []string{filepath.Join(U, ".ollama"), filepath.Join(U, ".lmstudio"), filepath.Join(U, `.cache\lm-studio`)},
-			globs: []string{
-				filepath.Join(U, `.ollama\models`),
-				filepath.Join(U, `.ollama\blobs`),
-				filepath.Join(U, `.lmstudio\models`),
-				filepath.Join(U, `.cache\lm-studio\models`),
-			}},
-		{ID: "workbuddy", Group: "AI 应用缓存", Name: "WorkBuddy 缓存", Desc: "AI 助手桌面版的更新安装包缓存与网页缓存，不影响账号、对话与工作区数据",
-			require: []string{filepath.Join(L, "@genieworkbuddy-desktop-updater"), filepath.Join(R, "WorkBuddy"), filepath.Join(L, "WorkBuddy")},
-			globs: append(electronCacheGlobs(filepath.Join(R, "WorkBuddy"), filepath.Join(L, "WorkBuddy")),
-				// 2026-09-21 真机实测：更新器残留的 installer.exe 高达 508MB（装完不删）
-				filepath.Join(L, `@genieworkbuddy-desktop-updater\*.exe`),
-				filepath.Join(L, `@genieworkbuddy-desktop-updater\*.nupkg`),
-				filepath.Join(L, `@genieworkbuddy-desktop-updater\*.zip`))},
-		{ID: "trae", Group: "AI 应用缓存", Name: "Trae 缓存", Desc: "AI 代码编辑器的缓存与运行日志，不影响扩展、设置与项目",
-			require: []string{filepath.Join(R, "Trae"), filepath.Join(L, "Trae")},
-			dirs:    []string{filepath.Join(R, `Trae\logs`), filepath.Join(L, `Trae\logs`)},
-			globs: append(electronCacheGlobs(filepath.Join(R, "Trae"), filepath.Join(L, "Trae")),
-				filepath.Join(R, `Trae\CachedData\*`), filepath.Join(L, `Trae\CachedData\*`))},
-		{ID: "windsurf", Group: "AI 应用缓存", Name: "Windsurf 缓存", Desc: "AI 代码编辑器的缓存与运行日志，不影响扩展、设置与项目",
-			require: []string{filepath.Join(R, "Windsurf"), filepath.Join(L, "Windsurf")},
-			dirs:    []string{filepath.Join(R, `Windsurf\logs`), filepath.Join(L, `Windsurf\logs`)},
-			globs: append(electronCacheGlobs(filepath.Join(R, "Windsurf"), filepath.Join(L, "Windsurf")),
-				filepath.Join(R, `Windsurf\CachedData\*`), filepath.Join(L, `Windsurf\CachedData\*`))},
-		{ID: "deepseek", Group: "AI 应用缓存", Name: "DeepSeek 桌面版缓存", Desc: "DeepSeek 客户端网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(R, "DeepSeek"), filepath.Join(L, "DeepSeek")},
-			globs:   electronCacheGlobs(filepath.Join(R, "DeepSeek"), filepath.Join(L, "DeepSeek"))},
-		{ID: "zhipu", Group: "AI 应用缓存", Name: "智谱清言缓存", Desc: "智谱清言桌面版网页缓存，不影响账号与对话记录",
-			require: []string{filepath.Join(R, "Zhipu"), filepath.Join(L, "Zhipu"), filepath.Join(R, "ChatGLM"), filepath.Join(L, "ChatGLM")},
-			globs:   electronCacheGlobs(filepath.Join(R, "Zhipu"), filepath.Join(L, "Zhipu"), filepath.Join(R, "ChatGLM"), filepath.Join(L, "ChatGLM"))},
-		{ID: "cherrystudio", Group: "AI 应用缓存", Name: "Cherry Studio 缓存", Desc: "本地 AI 客户端的网页缓存与日志，不影响助手配置与知识库",
-			require: []string{filepath.Join(R, "CherryStudio"), filepath.Join(L, "CherryStudio")},
-			globs:   electronCacheGlobs(filepath.Join(R, "CherryStudio"), filepath.Join(L, "CherryStudio"))},
-		{ID: "chatbox", Group: "AI 应用缓存", Name: "Chatbox 缓存", Desc: "本地 AI 客户端的网页缓存与日志，不影响对话与配置",
-			require: []string{filepath.Join(R, "Chatbox"), filepath.Join(L, "Chatbox")},
-			globs:   electronCacheGlobs(filepath.Join(R, "Chatbox"), filepath.Join(L, "Chatbox"))},
-
+		/* ===== 浏览器缓存 / 应用缓存 / AI 应用缓存（51 项）已迁入规则文件 =====
+		   2026-11-12 规则引擎化（用户拍板「一次到位」）：
+		   - 内置规则：rules/junkrules.ini（go:embed），ID/分组/文案/路径与迁移前逐项一致；
+		   - 引擎：junkrules.go —— 只认「路径 + 通配符」，无命令执行 / 无注册表删除 / 无网络；
+		   - 自定义：exe 旁 custom.ini 同格式追加（新软件）或覆盖（同 ID），免编译立即生效；
+		   - 兜底：appcacheauto 通用自动发现照旧；custom 新增项的根目录自动排除、不双算。
+		   组内顺序与迁移前一致（三类在 items 尾部整体追加，各分组内部相对顺序不变）。 */
 		// ===== 注册表垃圾（2026-09-20 只报确定失效的项，宁漏勿错） =====
 		{ID: "regmui", Group: "日志与注册表", Name: "MuiCache 失效条目", Desc: "资源管理器的应用名称缓存，指向的程序已被删除；系统会自动重建，可放心清",
 			Cmd: "reg:mui"},
@@ -597,8 +345,7 @@ func junkItems() []JunkItem {
 			}},
 
 		// ===== 深度清理（高风险，需手动勾选） =====
-		{ID: "winold", Group: "深度清理", Name: "Windows.old 旧系统", Desc: "升级系统留下的旧版 Windows，删除后无法回退", Risk: "warn", Cmd: "winold"},
-		{ID: "vss", Group: "深度清理", Name: "系统还原点", Desc: "删除全部卷影还原点，可腾出大量空间", Risk: "warn", Cmd: "vss"},
+		// v1.2.0 误报治理：以下两项改为「只给系统设置路径」的卡片，不再由本程序执行系统级强删。
 		{ID: "patchcache", Group: "深度清理", Name: "Installer 补丁缓存", Desc: "MSI 补丁缓存，清理后部分软件无法修复/卸载更新", Risk: "warn",
 			dirs: []string{filepath.Join(W, `Installer\$PatchCache$`)}},
 		{ID: "msocache", Group: "深度清理", Name: "Office 安装源缓存", Desc: "Office 本地安装源（所有磁盘），清理后修复/更改安装需插入介质", Risk: "warn",
@@ -618,20 +365,27 @@ func junkItems() []JunkItem {
 			dirs: []string{filepath.Join(PD, `Microsoft\Diagnosis`)}},
 		{ID: "brokenappx", Group: "深度清理", Name: "损坏的应用包", Desc: "移除状态为 Error 的 UWP 应用包，清理后需重新安装对应应用", Risk: "warn", Cmd: "brokenappx"},
 	}
+	// 三类缓存（浏览器/应用/AI，51 项）从规则文件加载 —— ID、分组、文案与迁移前一致，
+	// 上方 51 条字面量的删除位置即此挂载点（见 rules/junkrules.ini 与 junkrules.go）。
+	items = append(items, junkRuleItems()...)
 	for i := range items {
 		items[i].Seq = i
 	}
 	// 通用自动发现（2026-09-20 用户要求：按本机实际安装动态出列表，不限于预置规则）
-	if found := scanGenericAppCaches(L, R); len(found) > 0 {
+	// custom 新增规则的应用根目录自动排除（防同一份缓存双算）；内置项沿用函数内既有手工名单。
+	if found := scanGenericAppCaches(L, R, junkRuleCustomSkips()); len(found) > 0 {
 		items = append(items, JunkItem{ID: "appcacheauto", Group: "应用缓存", Name: "其他应用缓存（自动发现）",
 			Desc: "自动查找本机已装应用里名为 Cache / Code Cache / ShaderCache / GPUCache 的重建型缓存目录（含新版 Chromium 着色器缓存），清后由各应用自动重建；不碰 WebStorage / 账号数据 / 日志，已单独列出的应用不重复计入",
 			dirs: found})
 	}
 	for i := range items {
 		items[i].Seq = i
-		items[i].Heavy = heavyIDs[items[i].ID] // 口径分层：界面把"你的文件 / 整包"单独算一行
-		items[i].Renew = renewIDs[items[i].ID] // 显示口径：边用边长，不计入「这次真正能清掉」
-		items[i].Na    = naIDs[items[i].ID]    // 默认不勾选：不可逆 / 用户自己的东西，等用户手动勾
+		/* 2026-11-12 规则化：三类缓存的 Heavy/Renew/Na 已随规则文件带出（junkrules.go），
+		   这里改用「或」合成 —— 规则文件带了的以规则为准，名单里剩的是未迁移的静态项。
+		   三类迁移项已从下面三个名单里删掉，两边不会重复定义。 */
+		items[i].Heavy = items[i].Heavy || heavyIDs[items[i].ID] // 口径分层：界面把"你的文件 / 整包"单独算一行
+		items[i].Renew = items[i].Renew || renewIDs[items[i].ID] // 显示口径：边用边长，不计入「这次真正能清掉」
+		items[i].Na    = items[i].Na || naIDs[items[i].ID]       // 默认不勾选：不可逆 / 用户自己的东西，等用户手动勾
 	}
 	return items
 }
@@ -639,14 +393,15 @@ func junkItems() []JunkItem {
 // heavyIDs 口径分层的名单（2026-10-09 用户拍板：名单不删、全部默认勾选，界面分两行显示）。
 // 判据：清掉之后「不可逆 / 是你自己的东西 / 是一整个包」，而不是"能自动重建的缓存"。
 //   - 微信QQ接收的文件、本地大模型权重：是用户真实数据
-//   - MSOCache / Installer 补丁缓存 / Windows.old / 还原点：清了就没法修复、回退
+//   - MSOCache / Installer 补丁缓存：清了就没法修复、卸载更新
 //   - 驱动解压残留 / 全盘零散文件：整目录、整盘，且 .bak/.old 可能就是你自己的备份
-//   - 回收站 / Cookies / 浏览历史 / Defender 隔离区：清了找不回来
+//   - 回收站 / Cookies / 浏览历史：清了找不回来
 // 注意：这是「显示分层」，不是风险等级 —— Risk 字段照旧不动。
 var heavyIDs = map[string]bool{
-	"recycle": true, "cookies": true, "browserhist": true, "defender": true,
-	"qqrecv": true, "wechatrecv": true, "aimodels": true,
-	"msocache": true, "patchcache": true, "winold": true, "vss": true,
+	// 2026-11-12 规则化：cookies / qqrecv / wechatrecv / aimodels 四个迁移项改由
+	// rules/junkrules.ini 的 heavy 字段带出，名单里只留未迁移的静态项。
+	"recycle": true, "recycleother": true, "browserhist": true,
+	"msocache": true, "patchcache": true,
 	"deepjunk": true, "driverres": true, "brokenappx": true,
 }
 
@@ -668,24 +423,14 @@ var heavyIDs = map[string]bool{
 // ⚠️ 这个集合**只影响显示**：Renew 项照旧勾选、照旧清理。
 //    想让它「真的清不掉」是另一回事，不要在这里动删除行为。
 var renewIDs = map[string]bool{
+	// 2026-11-12 规则化：浏览器/应用/AI 三类的迁移项（共 42 个 renew 项）改由
+	// rules/junkrules.ini 的 renew 字段带出，这里只留静态项与 appcacheauto。
 	// 临时文件里唯一"一打开文件就回来"的
 	"recent": true,
 	// 系统缓存里"边用边重建"的几项
 	"prefetch": true, "thumb": true, "shader": true, "fontcache": true, "searchidx": true,
-	// 浏览器缓存（程序活着就写回）
-	"edgecache": true, "edgeai": true, "chromecache": true, "chromium": true,
-	"firefox": true, "iecache": true,
-	// 应用缓存（程序活着就写回）
-	"wpscache": true, "officecache": true, "adobe": true, "qqcache": true,
-	"wechatcache": true, "thunder": true, "netease": true, "dingtalk": true, "qqnt": true,
-	"vscache": true, "uwpcache": true, "mediaplayer": true, "gamedvr": true,
-	"douyinplugin": true, "vscode": true, "discord": true, "jetbrains": true,
+	// 通用自动发现兜底（程序活着就写回）
 	"appcacheauto": true,
-	// AI 应用缓存（程序活着就写回）
-	"doubao": true, "jianying": true, "kimi": true, "yuanbao": true, "tongyi": true,
-	"wenxin": true, "xinghuo": true, "jimeng": true, "chatgpt": true, "claude": true,
-	"cursor": true, "workbuddy": true, "trae": true, "windsurf": true,
-	"deepseek": true, "zhipu": true, "cherrystudio": true, "chatbox": true,
 	// 使用痕迹（一用就又有了）
 	"regrunmru": true, "regtyped": true,
 }
@@ -696,16 +441,12 @@ var renewIDs = map[string]bool{
 // ⚠️ 回收站**不在此列**：文件是用户自己主动删进去的，清空是预期行为，
 //    也是清理软件最基本的一项，业界（Dism++ / CCleaner 等）同样默认勾选。
 var naIDs = map[string]bool{
+	// 2026-11-12 规则化：cookies / qqrecv / wechatrecv / aimodels 四个迁移项改由
+	// rules/junkrules.ini 的 na 字段带出，这里只留未迁移的静态项。
 	// 清了要重新登录 / 找不回来
-	"cookies": true, "browserhist": true,
-	// 别人发来的真实文件
-	"qqrecv": true, "wechatrecv": true,
-	// 数 GB，删了要重新下载
-	"aimodels": true,
+	"browserhist": true,
 	// 删了无法回退或恢复系统
-	"winold": true, "vss": true, "dismreset": true,
-	// 隔离的文件删了找不回
-	"defender": true,
+	"dismreset": true,
 	// 删了无法修复 / 卸载更新
 	"msocache": true, "patchcache": true,
 	// .bak/.old 很可能就是用户自己的备份；整目录激进清空同样要用户点头
@@ -731,7 +472,7 @@ var naIDs = map[string]bool{
 //     Partitions/logs）一律挡掉，宁漏勿错。
 //  ③ 已有具名规则的应用根目录整段排除，避免同一份数据被算两遍（前端会按路径去重，
 //     但重复路径会让"合计"虚高，用户看到的数字对不上实际释放量）。
-func scanGenericAppCaches(L, R string) []string {
+func scanGenericAppCaches(L, R string, extraSkip []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	skipSub := []string{ // 已有具名规则/系统组件的根目录，防止重复计数
@@ -745,6 +486,8 @@ func scanGenericAppCaches(L, R string) []string {
 		`\genieworkbuddy`, `\workbuddy\`, `\trae\`, `\windsurf\`, `\deepseek\`, `\zhipu\`,
 		`\chatglm\`, `\cherrystudio\`, `\chatbox\`,
 	}
+	// custom.ini 新增规则的应用根目录（自动推导，见 junkrules.go 的 ruleCustomSkips）
+	skipSub = append(skipSub, extraSkip...)
 	want := map[string]bool{}
 	for _, n := range electronCacheCacheNames {
 		want[n] = true
@@ -932,6 +675,23 @@ func resolveTargets(ctx context.Context, it *JunkItem) (dirs, files []string) {
 	dirs = append(dirs, it.dirs...)
 	files = append(files, it.files...)
 	gcache := map[string][]string{}
+	// gofind：动态发现的数据根也按 glob 展开（2026-11-12：自定义安装路径兜底，
+	// 进程内缓存所以这里每次调用只查表，全盘搜索只在第一次跑）。
+	for _, name := range it.gofind {
+		for _, g := range finderGlobs(name) {
+			d, f := resolveGlob(ctx, g, gcache)
+			dirs = append(dirs, d...)
+			files = append(files, f...)
+		}
+	}
+	// find 声明（同日数据化）：与 gofind 同一条展开路，只是声明来自 ini 而非 Go。
+	for _, spec := range it.finds {
+		for _, g := range findSpecGlobs(spec) {
+			d, f := resolveGlob(ctx, g, gcache)
+			dirs = append(dirs, d...)
+			files = append(files, f...)
+		}
+	}
 	for _, g := range it.globs {
 		d, f := resolveGlob(ctx, g, gcache)
 		dirs = append(dirs, d...)

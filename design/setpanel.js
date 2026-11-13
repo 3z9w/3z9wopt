@@ -79,11 +79,10 @@ function setPaneGeneral(){
 function setPaneUpdate(){
   /* 读不到一律写「未获取到」，不拿 false / 0 顶 —— 那会被读成「未开启」，用户就去关一个本来没开的东西 */
   const elevTxt = SET.elev === null ? '未获取到' : (SET.elev ? '管理员' : '普通用户');
-  /* 更新日志：跳发布页（后端 GetAboutInfo().publish，前端不写死网址）。
-     描述里带上域名，让用户点之前就知道要去哪儿 —— 读不到就明说，不拿官网顶。 */
+  /* 更新日志：跳 GitHub 仓库的 更新记录.md（2026-11-13 用户拍板：不再指向发布页）。
+     仓库地址走关于页 github 字段（GetAboutInfo），读不到就明说，不拿别的网址顶。 */
   const ab = SET.about || window.ABOUT || {};
-  const pubUrl = ab.publish || '';
-  const pubHost = pubUrl ? pubUrl.replace(/^https?:\/\//i, '').replace(/\/.*$/, '') : '';
+  const chgUrl = (ab.github || '').replace(/\/+$/, '') + '/blob/main/' + encodeURIComponent('更新记录.md');
   /* 读不到就写「未获取到」：硬编码 v1.1.0 会让 1.2.0 之后一直显示错版本 */
   const verTxt = SET.ver ? verLabel(SET.ver) : '未获取到';
   /* 构建标识跟关于页统一口径：优先发布构建号 20261110.1，没有才退回构建日期。
@@ -101,7 +100,7 @@ function setPaneUpdate(){
     +   setGrp('本软件')
     +   setKv('版本', verTxt + (buildTxt ? '<small>构建 '+escHome(buildTxt)+'</small>' : ''))
     +   setKv('运行权限', elevTxt)
-    +   setRow('更新日志', pubHost ? ('每个版本改了什么 · '+escHome(pubHost)) : '没读到发布页地址',
+    +   setRow('更新日志', chgUrl ? 'GitHub 仓库 · 更新记录' : '没读到仓库地址',
               '<button class="btn sm" id="setChangelog">打开</button>')
     +   setGrp('是不是官方原版')
     +   '<div class="set-kv wide" style="display:block">'
@@ -428,10 +427,12 @@ function bindSettings(root){
   if(vf) vf.onclick = verifySelf;
   const uc = q('#setUpdCheck');
   if(uc) uc.onclick = function(){ checkUpdate(false); };
+  /* 2026-11-12 误报治理（用户拍板折中方案）：「下载并更新」改为打开官方发布页；
+     「替换并重启」按钮随软件内下载/自替换链路一起移除。 */
   const ug = q('#setUpdGo');
-  if(ug) ug.onclick = downloadUpdate;
-  const ua = q('#setUpdApply');
-  if(ua) ua.onclick = applyUpdate;
+  if(ug) ug.onclick = openUpdatePage;
+  const uh = q('#setUpdGh');
+  if(uh) uh.onclick = openUpdatePageGH;
 
   const cl = q('#setClearLog');
   if(cl) cl.onclick = function(){
@@ -447,7 +448,8 @@ function bindSettings(root){
   const cg = q('#setChangelog');
   if(cg) cg.onclick = function(){
     /* 现取现用：SET.about 是异步回来的，绑定时可能还没到，写死在闭包里会一直空 */
-    setOpenUrl((SET.about || window.ABOUT || {}).publish || '', '发布页地址');
+    const gh = ((SET.about || window.ABOUT || {}).github) || 'https://github.com/3z9w/3z9wopt';
+    setOpenUrl(gh.replace(/\/+$/, '') + '/blob/main/' + encodeURIComponent('更新记录.md'), '更新日志地址');
   };
   const lf = q('#setLogFold');
   if(lf) lf.onclick = function(e){
@@ -462,23 +464,14 @@ function bindSettings(root){
   });
 }
 /* ════════ 对主文件的门面（2026-10-13 拆模块时立）════════
-   主文件（顶栏齿轮 / 命令面板 / F5 / update:progress 回调）只认 window.SetPanel，
-   不认本文件里的任何函数名 —— 这样以后在模块里改名、重排，主文件一行都不用动。 */
+   主文件（顶栏齿轮 / 命令面板 / F5）只认 window.SetPanel，
+   不认本文件里的任何函数名 —— 这样以后在模块里改名、重排，主文件一行都不用动。
+   2026-11-12 误报治理：onProgress（下载进度）随软件内下载一起移除。 */
 window.SetPanel = {
   open:    function(tab){ openSettings(tab); },
   close:   function(){ closeSettings(); },
   isOpen:  function(){ return !!SET_OPEN; },
-  refresh: function(){ if(SET_OPEN) paintSettings(); },
-  /* 下载进度：后端约每 150ms 推一次。这里只改进度条那两个节点，不整窗重画 ——
-     重画会让进度条每次从头开始闪。 */
-  onProgress: function(done, total){
-    if(UPD.state !== 'downloading') return;
-    UPD.prog = {done: done || 0, total: total || 0};
-    const fill = document.getElementById('updBarFill'), meta = document.getElementById('updMeta');
-    const pct = total ? Math.min(100, Math.round(done / total * 100)) : 0;
-    if(fill) fill.style.width = pct + '%';
-    if(meta) meta.textContent = fmtSize(done) + (total ? (' / ' + fmtSize(total) + ' \u00b7 ' + pct + '%') : '');
-  }
+  refresh: function(){ if(SET_OPEN) paintSettings(); }
 };
 window.openSettings = openSettings;
 window.paintSettings = paintSettings;

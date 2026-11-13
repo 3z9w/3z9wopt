@@ -15,7 +15,8 @@
 
    后端接口：GetToolCats / GetToolCatalog / GetDrives / GetLanShareInfo /
              GetInstalledUpdates / GetPendingReboot / RunTool / StopTool / CopyText
-   事件：tool:log(kind,text) → tkOnLog；tool:done(code,secs,msg) → tkOnDone
+   事件：tool:log(kind,text) → tkOnLog；tool:done(code,secs,msg) → tkOnDone；
+         speed:tick(json) → tkOnSpeed（只有宽带测速会推，喂窗口里的实时仪表盘）
    ⚠️ 对外入口全部挂 window（主文件是同步 XHR + eval 的 IIFE 加载的）；
       主文件里的 cur / TOOLS 之类是 script 作用域局部变量，模块读不到 ——
       判断"在不在本页"一律看 #tkWall 在不在，不看 cur。
@@ -32,6 +33,7 @@ var TK = {
   updates: null, pending: false,
   term: '', termOpen: false, cf: null,   // cf = 危险工具的待确认 {id,arg}
   a1: null, a2: null, a3: null,          // 参数回填（重画窗口时保住已填的值）
+  speed: null,                           // 测速实时数据（speed:tick 累积到这里）
 };
 window.TK = TK;
 
@@ -61,13 +63,13 @@ function tkCatIco(k){ return TK_CATICO[k] || 'box'; }
    ⚠️ 没写进任何一组的工具自动落到「其它」，不会因为映射写漏就丢功能。 */
 var TK_SCENES = [
   {key:'netfix', name:'上不了网',   ico:'wifi',    desc:'网页打不开、网速慢、连不上局域网',
-   ids:['net-smart','net-ping','net-tracert','net-speed','net-port','net-hosts','net-lanfix']},
+   ids:['net-smart','net-ping','net-tracert','net-speed','net-port','net-lanfix']},
   {key:'update', name:'更新装不上', ico:'refresh', desc:'Windows 更新失败、补丁想卸掉、应用商店打不开',
    ids:['fix-update','fix-update-list','fix-update-remove','fix-store','info-updates']},
   {key:'broken', name:'系统报错',   ico:'shield',  desc:'缺 dll、功能异常、系统文件损坏；动手前先留后路',
    ids:['fix-sfc','fix-sfc-verify','fix-dism-restore','fix-dism-scan','fix-restore-point']},
   {key:'boot',   name:'开不了机',   ico:'box',     desc:'启动失败、引导丢失、卡在开机画面',
-   ids:['fix-boot','fix-bcd']},
+   ids:['fix-bcd']},
   {key:'disk',   name:'磁盘异常',   ico:'disk',    desc:'硬盘变慢、读写出错、怀疑有坏道',
    ids:['disk-defrag-analyze','disk-defrag-optimize','disk-smart','disk-speed','fix-chkdsk']},
   {key:'info',   name:'查本机情况', ico:'monitor', desc:'看看硬件、电池、驱动、开机多久了',
@@ -277,9 +279,9 @@ function tkCardHtml(t){
   /* 标题一行放不下就折行（.tk-c-t 允许换行），不截断 —— 工具名看全才好找 */
   return '<div class="tk-card" data-tkopen="' + tkEsc(t.id) + '">'
     + '<div class="tk-c-t"><b>' + tkEsc(t.name) + '</b>' + b + '</div>'
-    + '<div class="tk-c-d">' + tkEsc(t.desc) + '</div>'
+    + (t.desc ? '<div class="tk-c-d">' + tkEsc(t.desc) + '</div>' : '')
     + '<div class="tk-c-f">'
-    +   '<span class="tk-c-cmd" title="' + tkEsc(t.cmd) + '">' + tkEsc(t.cmd) + '</span>'
+    +   (t.cmd ? '<span class="tk-c-cmd" title="' + tkEsc(t.cmd) + '">' + tkEsc(t.cmd) + '</span>' : '')
     +   '<button class="tk-c-run" data-tkrun="' + tkEsc(t.id) + '">'
     +     ico('play', 11) + '运行</button>'
     + '</div></div>';
@@ -341,8 +343,8 @@ function tkTermHtml(){
     +     (t.backup ? '<span class="chip">自动备份</span>' : '')
     +     (t.reboot ? '<span class="chip warn">需重启生效</span>' : '')
     +   '</div>'
-    +   '<div class="tk-tm-c"><code>' + tkEsc(t.cmd) + '</code>'
-    +     '<span>超时 ' + (t.timeout || 0) + ' 秒</span></div>'
+    +   (t.cmd ? ('<div class="tk-tm-c"><code>' + tkEsc(t.cmd) + '</code>'
+    +     '<span>超时 ' + (t.timeout || 0) + ' 秒</span></div>') : '')
     + '</div>'
     + '<button class="tk-x" data-tkact="min">最小化</button>'
     + '<button class="tk-x" data-tkact="close" title="关闭窗口（工具继续跑）">关闭</button>'
@@ -351,16 +353,18 @@ function tkTermHtml(){
   /* 中间区自己滚：整个窗口不许高过视口（不然顶部的「关闭」会被裁到屏幕外，
      用户点不到，后续操作全打在遮罩上 —— 探针实测踩过）。 */
   h += '<div class="tk-tm-b">';
-  h += '<div class="tk-tm-d">' + tkEsc(t.desc) + '</div>';
+  if(t.desc) h += '<div class="tk-tm-d">' + tkEsc(t.desc) + '</div>';
   if(t.note){
     h += '<div class="tk-note">' + ico('warn', 14) + '<span>' + tkEsc(t.note) + '</span></div>';
   }
 
   /* 参数区 / 专属面板（跑起来之后不再让人改参数，但保留可见） */
   if(t.argKind === 'netpanel'){ h += tkNetPanelHtml(t); }
-  else if(t.argKind === 'speedtest'){ h += tkSpeedHtml(t); }
   else if(t.argKind === 'updatelist'){ h += tkUpdateHtml(t); }
-  else { h += tkArgHtml(t); }
+  else if(t.argKind !== 'speedtest'){ h += tkArgHtml(t); }
+
+  /* 测速独有：整个中间区就是实时仪表盘（说明文字全删，版面全部让给它） */
+  if(t.argKind === 'speedtest'){ h += '<div class="tk-sp" id="tkSpHud">' + tkSpeedHudBody() + '</div>'; }
 
   /* 输出 */
   var st = !run ? '<span class="chip">还没跑过</span>'
@@ -378,8 +382,7 @@ function tkTermHtml(){
   /* 底部：危险工具在这里变成确认条，不再叠第二层弹窗 */
   if(TK.cf && TK.cf.id === t.id){
     h += '<div class="tk-cfbar">' + ico('warn', 15)
-      + '<span>这个工具会改动系统（' + tkEsc(t.cmd) + '）'
-      + (t.reboot ? '，且需要重启才生效' : '') + '，确认执行？</span>'
+      + '<span>请确认后执行：' + tkEsc(t.cmd) + '</span>'
       + '<span class="sp"><button class="btn sm" data-tkact="cfno">取消</button>'
       + '<button class="btn sm primary danger" data-tkact="cfyes">确认执行</button></span></div>';
   }else if(busy){
@@ -467,13 +470,113 @@ function tkNetPanelHtml(t){
   return h;
 }
 
-/* 宽带测速：结果直接走窗口里的输出区 */
-function tkSpeedHtml(t){
-  return '<div class="tk-dsec">测速</div>'
-    + '<div class="tk-dim2">点「开始测速」，下载 / 上传 / 延迟实时打在下面的输出区。</div>'
-    + '<div class="tk-act"><button class="btn sm primary" data-tkspeed>' + ico('play', 13) + '开始测速</button>'
-    + '<span class="tk-act-h">测速会跑几十 MB 流量，别同时下载东西</span></div>';
+/* 测速仪表盘：说明文字全删，整块版面让给数据本身。
+   三种形态（按 phase 整体重建，数值更新只改文本节点 → CSS 动画不被 tick 打断）：
+   · 未开始：居中大按钮（呼吸光环）
+   · 跑动中：大数字（脉冲发光）+ 五格指标 + 流光进度条
+   · 完成：  结论横幅重点显示 + 五格定格 + 重新测速
+   数据来自后端 speed:tick 事件 → tkOnSpeed。 */
+function tkSpeedHudBody(){
+  var s = TK.speed || {};
+  var phase = s.phase || '';
+  if(!phase){
+    return '<div class="tk-sp-wrap tk-sp-idle">'
+      + '<button class="tk-sp-go" data-tkspeed>' + ico('play', 24) + '<span>开始测速</span></button>'
+      + '</div>';
+  }
+  var num = tkSpNum;
+  var big = '—';
+  if(phase === 'down' || phase === 'up'){ big = num(s.mbps); }
+  else if(phase === 'done' || (s.down !== undefined && s.down !== null)){ big = num(s.down); }
+  var label = s.label || '';
+  if(phase === 'done' && s.tier){ label = '相当于 ' + s.tier + ' 的宽带'; }
+  var pct = Math.max(0, Math.min(100, Number(s.pct) || 0));
+  var done = (phase === 'done');
+
+  var h = '<div class="tk-sp-wrap' + (done ? ' tk-sp-done' : ' tk-sp-run') + '">'
+    + '<div class="tk-sp-grid">'
+    + '<div class="tk-sp-big"><b id="tkSpNum">' + big + '</b><em>Mbps</em>'
+    +   '<div class="tk-sp-lab" id="tkSpLab">' + tkEsc(label) + '</div></div>'
+    + '<div class="tk-sp-tiles">'
+    +   '<div><span>下行</span><b id="tkSpDown">' + num(s.down) + '</b></div>'
+    +   '<div><span>上行</span><b id="tkSpUp">' + num(s.up) + '</b></div>'
+    +   '<div><span>延迟</span><b id="tkSpLat">' + num(s.lat, ' ms') + '</b></div>'
+    +   '<div><span>抖动</span><b id="tkSpJit">' + num(s.jitter, ' ms') + '</b></div>'
+    +   '<div><span>丢包</span><b id="tkSpLoss">' + num(s.loss, '%') + '</b></div>'
+    + '</div></div>'
+    + '<div class="tk-sp-bar"><i id="tkSpBar" style="width:' + pct + '%"></i></div>';
+  if(done){
+    h += '<div class="tk-sp-verdict">' + ico('bolt', 16) + '<span id="tkSpVerdict">'
+      + tkEsc(s.verdict || '') + '</span></div>';
+  }
+  h += '<div class="tk-sp-foot" id="tkSpFoot">' + tkSpFoot(s) + '</div>';
+  if(done){
+    h += '<button class="tk-sp-go sm" data-tkspeed>' + ico('play', 13) + '<span>重新测速</span></button>';
+  }
+  return h + '</div>';
 }
+
+/* 数字格式：缺数据画 '—'，≥100 取整，否则一位小数 */
+function tkSpNum(v, unit){
+  if(v === null || v === undefined || v === '' || isNaN(Number(v))) return '—';
+  var n = Number(v);
+  return (n >= 100 ? n.toFixed(0) : n.toFixed(1)) + (unit || '');
+}
+
+/* 底部信息行（节点 / 平均 / IP 归属，小字，随 tick 原位刷新） */
+function tkSpFoot(s){
+  var num = tkSpNum;
+  var foot = [];
+  if(s.node) foot.push('节点 <b>' + tkEsc(s.node) + '</b>');
+  if(s.downAvg !== undefined && s.downAvg !== null && Number(s.downAvg) > 0){
+    foot.push('平均 <b>' + num(s.downAvg) + ' Mbps</b>');
+  }
+  if(s.ip) foot.push('本机 IP <b>' + tkEsc(s.ip) + '</b>' + (s.loc ? (' · ' + tkEsc(s.loc)) : '')
+    + (s.isp ? (' · ' + tkEsc(s.isp)) : ''));
+  return foot.join(' &nbsp;·&nbsp; ');
+}
+
+/* speed:tick 事件回调（主文件 onGo('speed:tick') 转发到这里）。
+   phase 变了才重建 DOM；同一 phase 只改文本/宽度 —— 进度条流光、数字脉冲这些
+   CSS 动画每秒都在跑，整块换 innerHTML 会把它们打断，一卡一卡的。 */
+function tkOnSpeed(payload){
+  var m = payload;
+  if(typeof payload === 'string'){
+    try{ m = JSON.parse(payload); }catch(e){ return; }
+  }
+  if(!m || typeof m !== 'object') return;
+  var s = TK.speed || {};
+  for(var k in m){ if(m[k] !== undefined && m[k] !== null){ s[k] = m[k]; } }
+  TK.speed = s;
+  var box = tkEl('tkSpHud');
+  if(!box) return;
+  var phase = s.phase || '';
+  if(s._ph !== phase){
+    s._ph = phase;
+    box.innerHTML = tkSpeedHudBody();
+    return;
+  }
+  /* 同相位：只更新动态值 */
+  var q = function(id){ return box.querySelector('#' + id); };
+  var big = (phase === 'down' || phase === 'up') ? tkSpNum(s.mbps) : tkSpNum(s.down);
+  var set = function(id, v){ var el = q(id); if(el && el.textContent !== v) el.textContent = v; };
+  set('tkSpNum', big);
+  var label = s.label || '';
+  if(phase === 'done' && s.tier){ label = '相当于 ' + s.tier + ' 的宽带'; }
+  set('tkSpLab', label);
+  set('tkSpDown', tkSpNum(s.down));
+  set('tkSpUp', tkSpNum(s.up));
+  set('tkSpLat', tkSpNum(s.lat, ' ms'));
+  set('tkSpJit', tkSpNum(s.jitter, ' ms'));
+  set('tkSpLoss', tkSpNum(s.loss, '%'));
+  var bar = q('tkSpBar');
+  if(bar){ bar.style.width = Math.max(0, Math.min(100, Number(s.pct) || 0)) + '%'; }
+  var foot = q('tkSpFoot');
+  if(foot){ foot.innerHTML = tkSpFoot(s); }
+  var vd = q('tkSpVerdict');
+  if(vd && s.verdict){ vd.textContent = s.verdict; }
+}
+window.tkOnSpeed = tkOnSpeed;
 
 /* 补丁卸载：先列已装补丁，点某条卸载（后端支持 KB 号，自动匹配完整 Identity） */
 function tkUpdateHtml(t){
@@ -569,6 +672,11 @@ function tkGo(t, arg){
   tkReadArgs();
   TK.busy = true; TK.cf = null;
   TK.run = {id:t.id, name:t.name, lines:[], running:true, done:false, code:0, secs:0, msg:''};
+  if(t.id === 'net-speed'){   /* 新一轮测速：仪表盘立刻回初始态（第一条 tick 要等几秒才来） */
+    TK.speed = null;
+    var _sp = tkEl('tkSpHud');
+    if(_sp) _sp.innerHTML = tkSpeedHudBody();
+  }
   tkPaintTerm(); tkPaintMini();
   callGo('RunTool', t.id, arg || '').then(function(msg){
     if(msg){    /* 非空 = 没启动起来（参数不对 / 已有工具在跑） */

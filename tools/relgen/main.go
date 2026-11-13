@@ -284,7 +284,7 @@ func cmdPublish(args []string) error {
 	fmt.Println("接下来只剩两件事：")
 	fmt.Println("  1. 上传顺序：download/ 里的包 → version.json → index.html / sitemap.xml")
 	fmt.Println("     （先传清单会让中间那段时间点更新的人拿到 404）")
-	fmt.Println("  2. 更新记录.md 里补一句这次的改动")
+	fmt.Println("  2. 更新记录.md（两个公开副本里那份）补一句这次的改动")
 	return nil
 }
 

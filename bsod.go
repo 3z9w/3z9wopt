@@ -383,7 +383,7 @@ func bsodLookup(code uint32) bugInfo {
 		0x50:  {"PAGE_FAULT_IN_NONPAGED_AREA", "访问了不存在的内存页", "内存故障或驱动越界，最常见蓝屏之一", []string{"内存诊断优先", "结合嫌疑驱动更新 / 回滚", "检查最近装过的软件与驱动"}},
 		0x6B:  {"PROCESS1_INITIALIZATION_FAILED", "系统进程初始化失败", "启动文件损坏或磁盘问题", []string{"进恢复环境做启动修复", "检查系统盘 SMART"}},
 		0x73:  {"CONFIG_LIST_FAILED", "注册表配置单元读写失败", "注册表损坏或磁盘问题", []string{"chkdsk 检查系统盘", "从恢复环境还原注册表"}},
-		0x74:  {"BAD_SYSTEM_CONFIG_INFO", "系统配置信息错误", "注册表 SYSTEM 蜂巢损坏 / BCD 配置错误", []string{"进恢复环境做启动修复（bootrec /rebuildbcd）", "最近改过 BIOS 磁盘模式的改回原样", "本软件工具库的「系统引导修复」可尝试"}},
+		0x74:  {"BAD_SYSTEM_CONFIG_INFO", "系统配置信息错误", "注册表 SYSTEM 蜂巢损坏 / BCD 配置错误", []string{"进恢复环境做启动修复", "最近改过 BIOS 磁盘模式的改回原样", "需要进恢复设置：Win+I → 系统 → 恢复 → 高级启动"}},
 		0x77:  {"KERNEL_STACK_INPAGE_ERROR", "内核栈换页读取失败", "磁盘坏道或内存故障", []string{"chkdsk /r 修磁盘", "内存诊断"}},
 		0x7A:  {"KERNEL_DATA_INPAGE_ERROR", "页面文件数据读入失败", "磁盘坏道、数据线松动或内存故障", []string{"检查磁盘 SMART 与数据线", "chkdsk /r", "内存诊断"}},
 		0x7B:  {"INACCESSIBLE_BOOT_DEVICE", "启动时访问不到系统盘", "改过 BIOS 磁盘模式（AHCI/RAID）、存储驱动缺失", []string{"BIOS 里把磁盘模式改回装机时的方式", "进恢复环境卸载最近装存储驱动", "换数据线 / 接口试试"}},

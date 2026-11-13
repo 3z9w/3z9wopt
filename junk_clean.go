@@ -132,10 +132,11 @@ func (a *App) emit(name string, data ...interface{}) {
 // 清理执行编排（2026-10-09 从 v1.0 app.go 按行切片复制，路径/参数/行为未改）
 
 var cleanExecWeight = map[string]int{
-	"deepjunk": 1,                                   // 全盘遍历，慢但不打扰用户
-	"recycle":  2, "evtx": 2, "vss": 2, "winold": 2, // 秒级系统命令
-	"wucachedeep": 3, // 停更新服务（清完会启回来），影响面稍大
-	"dismreset":   4, // 数分钟
+	"deepjunk":     1, // 全盘遍历，慢但不打扰用户
+	"recycle":      2, // 回收站：秒级系统命令
+	"recycleother": 3, // 其他账户回收站：逐文件删，孤儿目录可能上千文件，排在当前账户之后
+	"wucachedeep":  3, // 停更新服务（清完会启回来），影响面稍大
+	"dismreset":    4, // 数分钟
 	// cleanmgr 已整项删除（2026-10-14），权重跟着去掉
 	// thumbdeep 已随 thumb 合并删除（2026-10-14）：thumb 改走目录型清理链（当场删 + 排队重启删），
 	// 不再杀资源管理器。谁再把"杀 explorer"加回来，junk_test.go:TestImpactMarksAreSet 会红。
@@ -153,7 +154,7 @@ func cleanExecutionOrder(ids []string) []string {
 }
 
 // isDirCleanItem 目录型清理项（Cmd 为空 = 清一个目录/文件的条目）。
-// 命令型项（recycle / vss / evtx / winold / cleanmgr / reg:xxx / badlnk / brokenappx …）
+// 命令型项（recycle / dismreset / reg:xxx / badlnk / brokenappx …）
 // 一律走串行阶段：它们要么需要重扫、要么要停服务/杀进程/起 PowerShell，
 // 不能跟目录删除并发抢盘（v1.1.0 修：原来按「权重未登记 = 0」判断，把它们当成了秒级快删项）。
 // 单独抽成函数是为了能写单测把这条规则锁住（见 junk_test.go）。
@@ -182,6 +183,7 @@ func (a *App) CleanJunk(ids []string) []CleanResult {
 	done := 0
 	var mu sync.Mutex
 	ids = cleanExecutionOrder(ids) // 执行顺序编排：快的先跑出结果，耗时/干扰大的排最后，刷新动作收尾
+
 
 	// 阶段一：目录型快删项 4 路并发（2026-09-19 提速：相互独立、都是秒级，
 	// 串行要排队等最慢的和，并发后总耗时 ≈ 最慢的那一项）
@@ -288,7 +290,7 @@ func (a *App) CleanJunk(ids []string) []CleanResult {
 		// recycle 也复核：它是"命令型"没错，但能用系统接口问出还剩多少
 		// （2026-10-10：不清它的话，D 盘那 160 MB 清不掉也永远不会有人告诉用户）
 		measurable := len(it.dirs) > 0 || len(it.globs) > 0 || len(it.files) > 0 ||
-			it.Cmd == "deepjunk" || it.Cmd == "recycle"
+			it.Cmd == "deepjunk" || it.Cmd == "recycle" || it.Cmd == "recycleother"
 		if !measurable {
 			continue
 		}
@@ -790,7 +792,7 @@ func findProcess(exeName string) []uint32 {
 // ---------- 命令型清理（隐藏窗口执行，带超时） ----------
 
 // systemDrive 本机系统盘根目录（带尾反斜杠），例如 `C:\`。
-// 必要性：Windows.old / 卷影副本 / 组件存储都长在系统盘上，而**系统盘不一定是 C:** ——
+// 必要性：组件存储（WinSxS）/ 系统日志 / 系统级缓存都长在系统盘上，而**系统盘不一定是 C:** ——
 // 盘符被改过的品牌机、PE/WinToGo、多系统机器上写死 C:\ 会让这几项恒报 0 且报"成功"（谎报）。
 func systemDrive() string {
 	d := strings.TrimSpace(os.Getenv("SystemDrive"))
@@ -838,30 +840,8 @@ func runHiddenOut(timeout time.Duration, name string, args ...string) (string, e
 	return string(out), err
 }
 
-// hasShadowCopies 判断系统当前是否存在卷影副本/系统还原点。
-// 必要性：vssadmin delete shadows 在“没有可删除的项目”时同样返回非 0 退出码，
-// 若不区分就会把“本来就没有还原点”误报成“执行失败（可能需要管理员权限）”。
-//
-// 返回 (有无还原点, 能否判断)。**第二个返回值是 2026-10-11 加的**：
-// 原来命令执行失败（vssadmin 不存在 / 超时）时也返回 false，于是把"没跑成"当成"本来就没有"，
-// 界面报"清理成功"—— 这是谎报。现在判不出来就是判不出来，不许当成"没有"。
-func hasShadowCopies() (have, known bool) {
-	out, err := runHiddenOut(30*time.Second, sysExe("vssadmin.exe", ""), "list", "shadows")
-	if err != nil {
-		return false, false
-	}
-	for _, k := range []string{"找不到满足查询的项目", "没有找到", "No items found", "no items found"} {
-		if strings.Contains(out, k) {
-			return false, true
-		}
-	}
-	for _, k := range []string{"卷影副本 ID", "Shadow Copy ID"} {
-		if strings.Contains(out, k) {
-			return true, true
-		}
-	}
-	return false, false // 德/日/韩等其它语言的输出认不出来：判不出来，不猜
-}
+// v1.2.0：原 hasShadowCopies（卷影副本探测）只服务于已移除的还原点清理命令，
+// 随该清理项一并删除，本文件不再保留任何卷影相关的系统命令调用。
 
 // ============================================================================
 // 命令型清理项执行（deepjunk / cleanmgr / dismreset / wucachedeep / thumbdeep ...）
@@ -886,7 +866,7 @@ func (a *App) runCmdCleanCtx(ctx context.Context, it *JunkItem) (int64, string) 
 		/* 2026-10-15 修正：**回收站本来就是空的时候，SHEmptyRecycleBinW 照样返回非 0**，
 		   而那时代码一路 fall through 到函数末尾的统一兜底，给用户看的是
 		   「执行失败（可能需要管理员权限）」—— 用户真去提权，提完还是这句话。
-		   跟 2026-10-11 vssadmin 那次是同一个坑：**同一个非零返回，成因完全不同。**
+		   跟历史上「命令非零返回」那次是同一个坑：**同一个非零返回，成因完全不同。**
 		   改判据：出错不许自己猜原因，让系统自己的现状说话 —— 复核一遍全盘回收站，
 		   真空了就是清掉了（含本来就没东西），还占着才是真失败。 */
 		if after := recycleTotalSize(); after == 0 {
@@ -895,52 +875,62 @@ func (a *App) runCmdCleanCtx(ctx context.Context, it *JunkItem) (int64, string) 
 		} else {
 			return 0, fmt.Sprintf("回收站里还剩 %s 没清掉，多半是里面的文件正被占用", fmtBytes(after))
 		}
-	case "winold":
-		// 2026-10-11：系统盘不再写死 C:（见 systemDrive），路径加引号防空格
-		oldDir := filepath.Join(systemDrive(), "Windows.old")
-		if _, serr := os.Stat(oldDir); serr != nil {
-			return 0, "" // 不存在，无需清理
+	case "recycleother":
+		/* 2026-11-12 用户拍板：扫描照扫、体积照给，但**默认不勾**；勾了这一项才删。
+		   删的是「本机账户列表里已经查无此人」的回收站残留（重装 / 删账户留下的），
+		   还活着的账户一律不碰（见 orphanRecycleDirs 的护栏）。
+		   盘符走 fixedDrives() 动态枚举 —— 用户机器上有几个分区就算几个，不写死。 */
+		dirs, liveBytes, ok := orphanRecycleDirs()
+		if !ok {
+			return 0, "读不到本机账户列表，无法确认哪些回收站属于已删除账户；为安全起见没有删除任何文件"
 		}
-		before, _ := walkSize(oldDir)
-		err = runHiddenCtx(ctx, 10*time.Minute, sysExe("cmd.exe", ""), "/c",
-			`takeown /f "`+oldDir+`" /r /d y >nul 2>&1 & icacls "`+oldDir+`" /grant administrators:F /t >nul 2>&1 & rmdir /s /q "`+oldDir+`" >nul 2>&1`)
-		if err == nil {
-			return before, ""
+		if liveBytes > 0 {
+			cleanTrace(fmt.Sprintf("recycleother: 另有 %s 属于仍在使用的账户，按规则不动", fmtBytes(liveBytes)))
 		}
-	case "vss":
-		// 2026-09-21 计量修复：删还原点真实释放空间，按系统盘空闲差记账（原来恒报 0）
-		// 2026-10-11：盘符不再写死 C:（见 systemDrive）
-		beforeVss := diskFreeBytes(systemDrive())
-		err = runHiddenCtx(ctx, 5*time.Minute, sysExe("vssadmin.exe", ""), "delete", "shadows", "/all", "/quiet")
-		if err != nil {
-			// 只有**确认**本来就没有还原点，才不算失败；vssadmin 不可用 / 输出认不出来时
-			// 如实报错 —— 不许把"没跑成"报成"清理成功"
-			if have, known := hasShadowCopies(); known && !have {
-				err = nil
-			}
+		if len(dirs) == 0 {
+			cleanTrace("recycleother: 没有可清理的孤儿账户回收站")
+			return 0, ""
 		}
-		if err == nil {
-			if after := diskFreeBytes(systemDrive()); after > beforeVss {
-				return after - beforeVss, ""
-			}
-		}
-	case "evtx":
-		// 2026-09-21 计量修复：wevtutil cl 是截断日志文件，按 winevt\Logs 目录前后差记账（原来恒报 0）
-		evtDir := filepath.Join(os.Getenv("windir"), `System32\winevt\Logs`)
-		beforeEvt, _ := walkSize(evtDir)
-		for _, lg := range []string{"Application", "System", "Security", "Setup"} {
+		var freed int64
+		var files, skipped int
+		var failed []string
+		for _, d := range dirs {
 			if ctx.Err() != nil {
-				break
+				return freed, "已停止"
 			}
-			if e := runHiddenCtx(ctx, time.Minute, sysExe("wevtutil.exe", ""), "cl", lg); e != nil {
-				err = e
+			before, _ := walkSize(d)
+			f, n, sk, err := clearRecycleSIDDir(d)
+			after, _ := walkSize(d)
+			/* 每个目录一行实测账：删前多少、删掉多少、删后还剩多少、跳过几个。
+			   日志必须能对得上，不许出现「报成功但其实没删」的情况。 */
+			cleanTrace(fmt.Sprintf("recycleother: %s before=%d freed=%d after=%d files=%d skipped=%d err=%v",
+				d, before, f, after, n, sk, err))
+			freed += f
+			files += n
+			skipped += sk
+			if err != nil {
+				failed = append(failed, filepath.Base(d))
 			}
 		}
-		if err == nil {
-			if after, _ := walkSize(evtDir); after < beforeEvt {
-				return beforeEvt - after, ""
-			}
+		if skipped > 0 {
+			cleanTrace(fmt.Sprintf("recycleother: 共跳过 %d 项（占用 / 权限 / 链接），未谎报为已清理", skipped))
 		}
+		/* 2026-11-12 用户拍板修：部分失败不许静默。
+		   原来只在「一个文件都没删掉」时才报错 —— 删了一半、剩下一半被占用时
+		   界面显示全成功，违背「不许把没跑成报成清理成功」（deepjunk 同场景就给了
+		   「部分跳过」提示）。现在只要有目录失败或文件跳过，就把残留如实挂到消息上；
+		   freed 照常返回（已删掉的确实删掉了）。 */
+		if len(failed) > 0 || skipped > 0 {
+			var parts []string
+			if len(failed) > 0 {
+				parts = append(parts, fmt.Sprintf("%d 个目录没删成（可能被占用或权限不足）", len(failed)))
+			}
+			if skipped > 0 {
+				parts = append(parts, fmt.Sprintf("%d 个文件被占用或为链接已跳过", skipped))
+			}
+			return freed, "部分残留：" + strings.Join(parts, "，")
+		}
+		return freed, ""
 	case "dismreset":
 		// 脚本第 186 行同款参数（G7 裁决：只留脚本这一种，不带 resetbase 的温和版已删）
 		// 2026-09-21 计量修复：组件清理真实释放空间，按 C 盘空闲差记账（原来恒报 0）
@@ -1085,16 +1075,124 @@ func (a *App) runCmdCleanCtx(ctx context.Context, it *JunkItem) (int64, string) 
 	return 0, ""
 }
 
-// recycleTotalSize 全盘回收站实测体积。
+// recycleTotalSize 当前登录账户的回收站实测体积。
 // 2026-10-15：抽出来是因为同一个东西现在要量两遍 —— 清之前记一笔账，
-// 清之后还要再量一次用来判定"到底清掉没有"（见上面 case "recycle" 里的注释）。
+// 清之后还要再量一次用来判定「到底清掉没有」（见上面 case "recycle" 里的注释）。
+//
+// 🔴 2026-11-12 口径修正：以前这里 walk 整个 $Recycle.Bin，把其他账户 / 已删除账户的
+// 残留也算进 before —— 而 SHEmptyRecycleBinW 只清当前账户，于是清完报「还剩 577 MB 没清掉」，
+// 用户以为是我们没干活。现在与扫描同口径：只量当前账户（见 recycleMineStats）。
 func recycleTotalSize() int64 {
-	var total int64
-	for _, drv := range fixedDrives() {
-		b, _ := walkSize(drv + `$Recycle.Bin`)
-		total += b
-	}
+	_, total, _ := recycleMineStats()
 	return total
+}
+
+// ============================================================================
+// 其他账户回收站：只有「已删除账户」留下的才算孤儿（2026-11-12 用户拍板）
+//
+// 这是本软件唯一一处会碰到「不是当前用户」的文件的地方，所以护栏必须写在代码里，
+// 不能靠调用方自觉：
+//   ① 目录名必须是标准用户 SID（S-1-5-21-X-Y-Z-RID），S-1-5-18/-19/-20 一律不认；
+//   ② 该 SID 在本机 ProfileList 里查无此人（读不到名单 ⇒ 一个都不删）；
+//   ③ 不是当前登录账户；
+//   ④ 任何一层是 junction / 符号链接 / 挂载点都跳过 —— 递归跟进去就会删到链接指向的别处；
+//   ⑤ 只删文件，保留 SID 目录本身与 desktop.ini。
+// 盘符全部走 fixedDrives() 动态枚举：一台机器有几个分区就处理几个。
+// ============================================================================
+
+// orphanRecycleDirs 列出所有固定盘上「可清理的孤儿账户回收站」目录。
+// liveBytes 是仍在使用（或系统账户）那一部分的体积，只用于如实提示，绝不参与删除。
+// ok=false 表示读不到本机账户列表 —— 此时调用方必须一个都不删。
+func orphanRecycleDirs() (dirs []string, liveBytes int64, ok bool) {
+	prof := profileSIDs()
+	if prof == nil {
+		return nil, 0, false
+	}
+	cur := currentUserSID()
+	for _, root := range fixedDrives() {
+		bin := filepath.Join(root, "$Recycle.Bin")
+		ents, err := os.ReadDir(bin)
+		if err != nil {
+			continue // 这个盘没有回收站目录 / 读不到：跳过
+		}
+		for _, e := range ents {
+			if !e.IsDir() {
+				continue
+			}
+			p := filepath.Join(bin, e.Name())
+			if isDeletableOrphanSID(e.Name(), cur, prof) {
+				dirs = append(dirs, p)
+				continue
+			}
+			if b, _ := walkSize(p); b > 0 {
+				liveBytes += b
+			}
+		}
+	}
+	return dirs, liveBytes, true
+}
+
+// isReparsePath 判断路径是不是 junction / 符号链接 / 挂载点。
+// 🔴 递归删除前必须挡掉：Go 的目录遍历会跟进去，把链接指向的别处一并删掉 —— 真实事故路径。
+func isReparsePath(p string) bool {
+	ptr, err := windows.UTF16PtrFromString(p)
+	if err != nil {
+		return true // 路径都构造不出来 → 当作不安全
+	}
+	a, err := windows.GetFileAttributes(ptr)
+	if err != nil {
+		return false // 不存在 / 读不到属性：交给上层按普通条目处理（会自然失败并计入跳过）
+	}
+	return a&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+// clearRecycleSIDDir 清空一个 SID 回收站目录里的文件，保留目录本身与 desktop.ini。
+// 返回真实删掉的字节数、文件数、跳过数；遇到链接一律跳过，不跟进去。
+func clearRecycleSIDDir(dir string) (freed int64, files, skipped int, firstErr error) {
+	if isReparsePath(dir) {
+		return 0, 0, 0, fmt.Errorf("%s 是链接目录，跳过", dir)
+	}
+	var walk func(string)
+	walk = func(d string) {
+		ents, err := os.ReadDir(d)
+		if err != nil {
+			skipped++
+			if firstErr == nil {
+				firstErr = err
+			}
+			return
+		}
+		for _, e := range ents {
+			p := filepath.Join(d, e.Name())
+			if isReparsePath(p) {
+				skipped++ // 链接不碰，绝不着跟进去
+				continue
+			}
+			if e.IsDir() {
+				walk(p)
+				os.Remove(p) // 空了才删得掉；有跳过文件的目录就留着
+				continue
+			}
+			if strings.EqualFold(e.Name(), "desktop.ini") {
+				continue // 目录的显示配置，留着
+			}
+			var sz int64
+			if info, err := e.Info(); err == nil {
+				sz = info.Size()
+			}
+			if err := os.Remove(p); err != nil {
+				skipped++
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
+			}
+			freed += sz
+			files++
+		}
+	}
+	walk(dir)
+	return
 }
 
 func clearRecycleBin() error {

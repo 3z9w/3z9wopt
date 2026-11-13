@@ -13,7 +13,8 @@ package main
 //         · 注册表 REG_BINARY 的 Data 有「纯 hex」与「逗号分隔 hex」两种写法，都要吃
 //
 // 红线（用户 2026-09-19 定，照搬不擅改）：
-//   · 基本优化 87 项 / 深度优化 127 项名单照源项目原样搬，不擅自删减
+//   · 基本优化 84 项 / 深度优化 122 项（原 87/127：误报治理删 4 项关防护 + 7 项改跳转指引出预设
+//     → 84/116；2026-11-12 采纳豆包 27 条对照新增 6 项（全部 Deep）→ 84/122）
 //   · 安全组（关防火墙 / 关 UAC / 关 SmartScreen 等）源软件也不默认勾，保持一致
 //   · 改名单前必须先问用户
 //
@@ -34,6 +35,7 @@ import (
 	"time"
 	"unsafe"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -49,6 +51,8 @@ type OptItemStatus struct {
 	Deep      bool   `json:"deep"`
 	Optimized bool   `json:"optimized"`
 	Reboot    bool   `json:"reboot"` // 改了要重启电脑才完全生效（服务启动类型 / 内核与会话参数 / UAC 总开关等）
+	Guide     string `json:"guide"`  // 跳转指引：非空 = 该项不代改，前端只给「去设置」按钮（2026-11-12 误报治理第二批）
+	New       bool   `json:"new"`   // 本轮新增项：前端显示 New 徽标
 }
 
 type OptResult struct {
@@ -219,12 +223,25 @@ func (a *App) GetOptimizeCatalog() []OptItemStatus {
 	out := make([]OptItemStatus, 0, len(optCatalog))
 	for i := range optCatalog {
 		it := &optCatalog[i]
-		out = append(out, OptItemStatus{
+		st := OptItemStatus{
 			ID: it.ID, Cat: it.Cat, CatName: it.CatName,
-			Name: optItemName(it.Name), Desc: optDesc(it),
-			Basic: it.Basic, Deep: it.Deep, Optimized: isOptimized(it),
-			Reboot: itemNeedsReboot(it),
-		})
+			Name: optItemName(it.Name),
+			Basic: it.Basic, Deep: it.Deep, New: it.New,
+		}
+		if it.Guide != "" {
+			// 跳转指引项：没有检测键、没有动作 —— 状态固定「未优化/不勾选」，只有「去设置」。
+			// 副标题用 GuideTip（进了设置页该怎么点），缺文案才退回通用说明。
+			st.Guide = it.Guide
+			st.Desc = it.GuideTip
+			if st.Desc == "" {
+				st.Desc = "打开 Windows 自带设置页手动调整"
+			}
+		} else {
+			st.Desc = optDesc(it)
+			st.Optimized = isOptimized(it)
+			st.Reboot = itemNeedsReboot(it)
+		}
+		out = append(out, st)
 	}
 	return out
 }
@@ -462,6 +479,14 @@ func (a *App) runOptimize(ids []string, restore bool) []OptResult {
 		if !ok {
 			continue // 白名单之外的 ID 直接拒绝
 		}
+		if it.Guide != "" {
+			// 跳转指引项拒收（双保险：前端本就不可勾选，这里挡住异常路径塞进来的 ID）
+			a.emit("opt:progress", done, total, it.Name, it.ID)
+			results = append(results, OptResult{ID: it.ID, Name: it.Name, OK: false, Err: "该项已改为跳转指引，请在列表里点「去设置」手动处理"})
+			done++
+			a.emit("opt:progress", done, total, "", "")
+			continue
+		}
 		a.emit("opt:progress", done, total, it.Name, it.ID)
 		acts := it.Optimize
 		if restore {
@@ -494,6 +519,49 @@ func (a *App) ApplyOptimize(ids []string) []OptResult { return a.runOptimize(ids
 
 // RestoreOptimize 按 ID 还原优化项（每项都有自己的还原动作，逐项可撤销）
 func (a *App) RestoreOptimize(ids []string) []OptResult { return a.runOptimize(ids, true) }
+
+// ---------- 跳转指引（2026-11-12 误报治理第二批） ----------
+//
+// 关防护类高危项不再由本工具代改注册表（静态扫描一票否决），改成「去设置」直达：
+// Guide 存 ms-settings: / windowsdefender: URI 时走 ShellExecute open 打开对应设置页
+// （windowsdefender:// 子页清单在 Win10 22H2 / Win11 22H2 双验证过，见 误报治理.md §16）；
+// 存程序名的（目前只有 UAC 滑杆 UserAccountControlSettings.exe，ms-settings 没有对应页）
+// 按系统目录解析成完整路径再启动。两者都是 Windows 自带的只读导航动作，不写任何东西。
+
+// OpenOptGuide 打开跳转指引项对应的系统设置页，返回空串 = 成功
+func (a *App) OpenOptGuide(id string) string {
+	for i := range optCatalog {
+		it := &optCatalog[i]
+		if it.ID != id {
+			continue
+		}
+		if it.Guide == "" {
+			return "该项不是跳转指引项"
+		}
+		g := it.Guide
+		if strings.Contains(g, "://") || strings.HasPrefix(g, "ms-settings:") {
+			// ShellExecute 直接调不走 CreateProcess，不闪黑框也不依赖 cmd（与 BsodReveal 同款做法）
+			if err := windows.ShellExecute(0,
+				windows.StringToUTF16Ptr("open"),
+				windows.StringToUTF16Ptr(g),
+				nil, nil, windows.SW_SHOWNORMAL); err != nil {
+				// 兜底：ShellExecute 被 shell 策略禁掉时退回 cmd start
+				if err2 := runHidden(10*time.Second, "cmd", "/c", "start", "", g); err2 != nil {
+					return "打开失败：" + err2.Error()
+				}
+			}
+			cleanTrace(fmt.Sprintf("OpenOptGuide %s → %s", id, g))
+			return ""
+		}
+		// 内置程序：sysExe 按系统目录解析成完整路径再启动（GUI 程序，无控制台闪烁）
+		if err := exec.Command(sysExe(g, "")).Start(); err != nil {
+			return "启动失败：" + err.Error()
+		}
+		cleanTrace(fmt.Sprintf("OpenOptGuide %s → %s", id, g))
+		return ""
+	}
+	return "目录里没有这一项"
+}
 
 // ---------- 体感快照（优化前后各拍一次，让"更流畅"可量化） ----------
 
@@ -609,7 +677,9 @@ func itemNeedsReboot(it *OptItem) bool {
 				strings.Contains(k, `\CONTROL\DEVICEGUARD`),
 				strings.HasSuffix(k, `\CONTROL`),
 				strings.Contains(k, `\RESERVEMANAGER`),
-				strings.Contains(k, `POLICIES\SYSTEM`) && v == "ENABLELUA":
+				strings.Contains(k, `POLICIES\SYSTEM`) && v == "ENABLELUA",
+				// NTFS 关最后访问时间：卷挂载时才重读该标志，改完需重启才完全生效（其余 FileSystem 键如长路径即时生效，精确到值不误伤）
+				strings.Contains(k, `\CONTROL\FILESYSTEM`) && v == "NTFSDISABLELASTACCESSUPDATE":
 				return true
 			}
 		}

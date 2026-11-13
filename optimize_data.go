@@ -17,6 +17,10 @@ type OptAction struct {
 }
 
 // OptItem 一个可优化项：检测(checkKey/checkValue==Optimized 即已优化) + 优化/还原动作
+// Guide 非空 = 跳转指引项（2026-11-12 误报治理第二批）：该项不再由本工具代改，
+// 只在前端给「去设置」按钮直达 Windows 自带界面。Guide 存 ms-settings: / windowsdefender:
+// URI 或内置程序名（如 UserAccountControlSettings.exe）；此时 CheckKey/Optimize/Restore
+// 全部留空，runOptimize 拒收、不进 Basic/Deep 预设、前端不可勾选。
 type OptItem struct {
 	ID         string
 	Cat        string // explorer/xingneng/safe/edge/system/update/yinsi
@@ -29,6 +33,9 @@ type OptItem struct {
 	Deep       bool   // 深度优化预设
 	Optimize   []OptAction
 	Restore    []OptAction
+	Guide      string // 跳转指引：非空 = 不代改，只给「去设置」按钮（见结构体上方注释）
+	GuideTip   string // 跳转指引的副标题：进了设置页之后该怎么点（「干什么」之上的「怎么干」）
+	New        bool   // 本轮新增项：前端显示 New 徽标（攒够一批后手动清掉，避免永久挂 New）
 }
 
 var optCatalog = []OptItem{
@@ -632,18 +639,6 @@ var optCatalog = []OptItem{
 			{Kind: "cmd", Cmd: "powercfg.exe -setactive 381b4222-f694-41f0-9685-ff5bb260df2e", Skiperr: ""}},
 	},
 	{
-		ID: "xingneng-30", Cat: "xingneng", CatName: "性能优化设置",
-		Name:     "30、禁用处理器的幽灵和熔断补丁以提高性能",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management", CheckValue: "FeatureSettingsOverride", Optimized: "3",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management", Value: "FeatureSettingsOverride", Vtype: "REG_DWORD", Data: "3"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management", Value: "FeatureSettingsOverrideMask", Vtype: "REG_DWORD", Data: "3"}},
-		Restore: []OptAction{
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management", Value: "FeatureSettingsOverride"},
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management", Value: "FeatureSettingsOverrideMask"}},
-	},
-	{
 		ID: "xingneng-31", Cat: "xingneng", CatName: "性能优化设置",
 		Name:     "31、禁用保留的存储",
 		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\ReserveManager", CheckValue: "MiscPolicyInfo", Optimized: "2",
@@ -742,14 +737,12 @@ var optCatalog = []OptItem{
 			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "DisableAutomaticRestartSignOn", Vtype: "REG_DWORD", Data: "1"}},
 	},
 	{
+		// 2026-11-12 误报治理第二批：原 regwrite 关 Exploit Protection（高危缓解关闭串）→ 跳转指引
 		ID: "xingneng-39", Cat: "xingneng", CatName: "性能优化设置",
-		Name:     "39、关闭Exploit Protection（乱序内存）",
-		CheckKey: "HKEY_LOCAL_MACHINE\\System\\ControlSet001\\Control\\Session Manager\\kernel", CheckValue: "MitigationOptions", Optimized: "22,22,22,00,00,02,00,00,00,02,00,00,00,00,00,00",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\System\\ControlSet001\\Control\\Session Manager\\kernel", Value: "MitigationOptions", Vtype: "REG_BINARY", Data: "22,22,22,00,00,02,00,00,00,02,00,00,00,00,00,00"}},
-		Restore: []OptAction{
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\System\\ControlSet001\\Control\\Session Manager\\kernel", Value: "MitigationOptions"}},
+		Name: "39、关闭Exploit Protection（乱序内存）",
+		Guide: "windowsdefender://exploitprotection",
+		GuideTip: "点「程序设置」选程序，或「系统设置」改默认缓解项",
+		Basic: false, Deep: false,
 	},
 	{
 		ID: "xingneng-40", Cat: "xingneng", CatName: "性能优化设置",
@@ -812,16 +805,6 @@ var optCatalog = []OptItem{
 			{Kind: "regdelete", Key: "HKEY_CURRENT_USER\\Software\\Policies\\Microsoft\\Windows\\explorer", Value: "DisableSearchBoxSuggestions"}},
 	},
 	{
-		ID: "xingneng-44", Cat: "xingneng", CatName: "性能优化设置",
-		Name:     "44、关闭TSX漏洞补丁",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Kernel", CheckValue: "DisableTsx", Optimized: "1",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Kernel", Value: "DisableTsx", Vtype: "REG_DWORD", Data: "1"}},
-		Restore: []OptAction{
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Kernel", Value: "DisableTsx"}},
-	},
-	{
 		ID: "xingneng-45", Cat: "xingneng", CatName: "性能优化设置",
 		Name:     "45、开启GPU硬件加速",
 		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", CheckValue: "HwSchMode", Optimized: "2",
@@ -832,19 +815,50 @@ var optCatalog = []OptItem{
 			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers", Value: "HwSchMode"}},
 	},
 	{
-		ID: "safe-1", Cat: "safe", CatName: "安全设置",
-		Name:     "1、将用户账号控制（UAC）调整为从不通知",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", CheckValue: "ConsentPromptBehaviorAdmin", Optimized: "0",
+		// 2026-11-12 采纳（豆包 27 条对照新增）：电源计划细化。走 powercfg 内置别名
+		// （SCHEME_BALANCED/SCHEME_MIN/SUB_USB/SUB_DISK/SUB_PROCESSOR），跨机器通用，
+		// 也绕开 PowerSchemes 注册表分支的 ACL 写权限坑（powercfg 经 Power 服务落盘）。
+		// 处理器最小状态刻意不设：台式/笔记本取值不同，且会与 29、启用高性能电源计划 打架。
+		// 检测：平衡方案 USB 选择性挂起 AC 值为 0 即视为已优化（powercfg 写完该值必然落盘）。
+		ID: "xingneng-46", Cat: "xingneng", CatName: "性能优化设置",
+		Name:     "46、电源计划细化（禁USB选择性挂起、硬盘不休眠、处理器满频）",
+		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Power\\User\\PowerSchemes\\381b4222-f694-41f0-9685-ff5bb260df2e\\2a737441-1930-4402-8d77-a2cf01da2f68\\48e6b7a6-50f5-4782-a5d4-53bb8f07e226", CheckValue: "ACSettingIndex", Optimized: "0",
 		Basic: false, Deep: true,
+		New: true,
 		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "PromptOnSecureDesktop", Vtype: "REG_DWORD", Data: "0"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "ConsentPromptBehaviorAdmin", Vtype: "REG_DWORD", Data: "0"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "ConsentPromptBehaviorUser", Vtype: "REG_DWORD", Data: "3"}},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_BALANCED SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_BALANCED SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_MIN SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_MIN SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_BALANCED SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_BALANCED SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_MIN SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_MIN SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 0", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_BALANCED SUB_PROCESSOR PROCTHROTTLEMAX 100", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_BALANCED SUB_PROCESSOR PROCTHROTTLEMAX 100", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_MIN SUB_PROCESSOR PROCTHROTTLEMAX 100", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_MIN SUB_PROCESSOR PROCTHROTTLEMAX 100", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setactive SCHEME_CURRENT", Skiperr: ""}},
 		Restore: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "PromptOnSecureDesktop", Vtype: "REG_DWORD", Data: "1"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "ConsentPromptBehaviorAdmin", Vtype: "REG_DWORD", Data: "2"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "ConsentPromptBehaviorUser", Vtype: "REG_DWORD", Data: "3"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "EnableLUA", Vtype: "REG_DWORD", Data: "1"}},
+			// 还原：USB 挂起回 1；硬盘休眠回默认 1200 秒（20 分钟）；处理器满频 100 本就是默认不写
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_BALANCED SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 1", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_BALANCED SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 1", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_MIN SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 1", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_MIN SUB_USB 48e6b7a6-50f5-4782-a5d4-53bb8f07e226 1", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_BALANCED SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 1200", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_BALANCED SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 1200", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setacvalueindex SCHEME_MIN SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 1200", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setdcvalueindex SCHEME_MIN SUB_DISK 6738e2c4-e8a5-4a42-b16d-e040e769756e 1200", Skiperr: ""},
+			{Kind: "cmd", Cmd: "powercfg.exe -setactive SCHEME_CURRENT", Skiperr: ""}},
+	},
+	{
+		// 2026-11-12 误报治理第二批：原 regwrite 关 UAC（ConsentPromptBehaviorAdmin=0）→ 跳转指引
+		// UAC 滑杆没有 ms-settings 页，用系统自带的 UserAccountControlSettings.exe 直开滑杆窗口
+		ID: "safe-1", Cat: "safe", CatName: "安全设置",
+		Name: "1、将用户账号控制（UAC）调整为从不通知",
+		Guide: "UserAccountControlSettings.exe",
+		GuideTip: "把滑杆拖到最下面「从不通知」→ 确定 → 重启",
+		Basic: false, Deep: false,
 	},
 	{
 		ID: "safe-2", Cat: "safe", CatName: "安全设置",
@@ -887,62 +901,36 @@ var optCatalog = []OptItem{
 			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", Value: "EnableUIADesktopToggle", Vtype: "REG_DWORD", Data: "0"}},
 	},
 	{
+		// 2026-11-12 误报治理第二批：原 regwrite 关 SmartScreen（SmartScreenEnabled=off）→ 跳转指引
 		ID: "safe-6", Cat: "safe", CatName: "安全设置",
-		Name:     "6、关闭SmartScreen应用筛选器",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", CheckValue: "SmartScreenEnabled", Optimized: "off",
-		Basic: true, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", Value: "SmartScreenEnabled", Vtype: "REG_SZ", Data: "off"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\MicrosoftEdge\\PhishingFilter", Value: "EnabledV9", Vtype: "REG_DWORD", Data: "0"}},
-		Restore: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer", Value: "SmartScreenEnabled", Vtype: "REG_SZ", Data: "RequireAdmin"},
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\MicrosoftEdge\\PhishingFilter", Value: "EnabledV9"}},
+		Name: "6、关闭SmartScreen应用筛选器",
+		Guide: "windowsdefender://appbrowser",
+		GuideTip: "点「基于声誉的保护设置」，关掉检查应用和文件等开关",
+		Basic: false, Deep: false,
 	},
 	{
-		ID: "safe-7", Cat: "safe", CatName: "安全设置",
-		Name:     "7、关闭打开程序的安全警告",
-		CheckKey: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Associations", CheckValue: "ModRiskFileTypes", Optimized: ".bat;.exe;.reg;.vbs;.chm;.msi;.js;.cmd",
-		Basic: true, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Associations", Value: "ModRiskFileTypes", Vtype: "REG_SZ", Data: ".bat;.exe;.reg;.vbs;.chm;.msi;.js;.cmd"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Associations", Value: "ModRiskFileTypes", Vtype: "REG_SZ", Data: ".bat;.exe;.reg;.vbs;.chm;.msi;.js;.cmd"}},
-		Restore: []OptAction{
-			{Kind: "regdelete", Key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Associations", Value: "ModRiskFileTypes"},
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Associations", Value: "ModRiskFileTypes"}},
-	},
-	{
+		// 2026-11-12 误报治理第二批：原 regwrite 关防火墙三配置文件 → 跳转指引
 		ID: "safe-8", Cat: "safe", CatName: "安全设置",
-		Name:     "8、关闭防火墙",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile", CheckValue: "EnableFirewall", Optimized: "0",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile", Value: "EnableFirewall", Vtype: "REG_DWORD", Data: "0"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile", Value: "EnableFirewall", Vtype: "REG_DWORD", Data: "0"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile", Value: "EnableFirewall", Vtype: "REG_DWORD", Data: "0"}},
-		Restore: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\StandardProfile", Value: "EnableFirewall", Vtype: "REG_DWORD", Data: "1"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\PublicProfile", Value: "EnableFirewall", Vtype: "REG_DWORD", Data: "1"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\DomainProfile", Value: "EnableFirewall", Vtype: "REG_DWORD", Data: "1"}},
+		Name: "8、关闭防火墙",
+		Guide: "windowsdefender://network",
+		GuideTip: "点当前网络（域/专用/公用），关掉 Microsoft Defender 防火墙",
+		Basic: false, Deep: false,
 	},
 	{
+		// 2026-11-12 误报治理第二批：原 regwrite 关 HVCI → 跳转指引（内核隔离页）
 		ID: "safe-9", Cat: "safe", CatName: "安全设置",
-		Name:     "9、关闭内存完整",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity", CheckValue: "Enabled", Optimized: "0",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity", Value: "Enabled", Vtype: "REG_DWORD", Data: "0"}},
-		Restore: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard\\Scenarios\\HypervisorEnforcedCodeIntegrity", Value: "Enabled", Vtype: "REG_DWORD", Data: "1"}},
+		Name: "9、关闭内存完整",
+		Guide: "windowsdefender://coreisolation",
+		GuideTip: "关「内存完整性」开关 → 重启",
+		Basic: false, Deep: false,
 	},
 	{
+		// 2026-11-12 误报治理第二批：原 regwrite 关 VBS → 跳转指引（与内存完整同在内核隔离页）
 		ID: "safe-10", Cat: "safe", CatName: "安全设置",
-		Name:     "10、关闭虚拟化安全性",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard", CheckValue: "EnableVirtualizationBasedSecurity", Optimized: "0",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard", Value: "EnableVirtualizationBasedSecurity", Vtype: "REG_DWORD", Data: "0"}},
-		Restore: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceGuard", Value: "EnableVirtualizationBasedSecurity", Vtype: "REG_DWORD", Data: "1"}},
+		Name: "10、关闭虚拟化安全性",
+		Guide: "windowsdefender://coreisolation",
+		GuideTip: "关「内核隔离」页的「内存完整性」开关 → 重启",
+		Basic: false, Deep: false,
 	},
 	{
 		ID: "edge-1", Cat: "edge", CatName: "Edge优化设置",
@@ -1263,6 +1251,32 @@ var optCatalog = []OptItem{
 			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Services\\BFE\\Parameters\\Policy\\Options", Value: "CollectNetEvents"}},
 	},
 	{
+		// 2026-11-12 采纳（豆包 27 条对照新增）：减少 SSD 无谓写盘。1 = 用户管理且禁用更新
+		//（即 fsutil behavior set disablelastaccess 1 的落盘值）。还原 0 = 用户管理且启用（恢复时间戳更新）。
+		ID: "system-15", Cat: "system", CatName: "系统设置",
+		Name:     "15、关闭NTFS最后访问时间更新",
+		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", CheckValue: "NtfsDisableLastAccessUpdate", Optimized: "1",
+		Basic: false, Deep: true,
+		New: true,
+		Optimize: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", Value: "NtfsDisableLastAccessUpdate", Vtype: "REG_DWORD", Data: "1"}},
+		Restore: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\FileSystem", Value: "NtfsDisableLastAccessUpdate", Vtype: "REG_DWORD", Data: "0"}},
+	},
+	{
+		// 2026-11-12 采纳（豆包 27 条对照新增）：保留休眠、只关快速启动（与 1、关闭休眠 互补不冲突）。
+		// 键在 Session Manager 分支下，itemNeedsReboot 自动带「需重启」。
+		ID: "system-16", Cat: "system", CatName: "系统设置",
+		Name:     "16、关闭快速启动",
+		CheckKey: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", CheckValue: "HiberbootEnabled", Optimized: "0",
+		Basic: false, Deep: true,
+		New: true,
+		Optimize: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", Value: "HiberbootEnabled", Vtype: "REG_DWORD", Data: "0"}},
+		Restore: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Power", Value: "HiberbootEnabled", Vtype: "REG_DWORD", Data: "1"}},
+	},
+	{
 		ID: "update-1", Cat: "update", CatName: "更新设置",
 		Name:     "1、自动安装无需重启的更新",
 		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsUpdate\\AU", CheckValue: "AutoInstallMinorUpdates", Optimized: "1",
@@ -1307,26 +1321,12 @@ var optCatalog = []OptItem{
 			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control", Value: "PortableOperatingSystem"}},
 	},
 	{
-		ID: "update-5", Cat: "update", CatName: "更新设置",
-		Name:     "5、Windows更新不包括恶意软件删除工具",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\MRT", CheckValue: "DontOfferThroughWUAU", Optimized: "1",
-		Basic: true, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\MRT", Value: "DontOfferThroughWUAU", Vtype: "REG_DWORD", Data: "1"}},
-		Restore: []OptAction{
-			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\MRT", Value: "DontOfferThroughWUAU"}},
-	},
-	{
+		// 2026-11-12 误报治理第二批：原 regwrite AUOptions=1（从不查更新）→ 跳转指引
 		ID: "update-6", Cat: "update", CatName: "更新设置",
-		Name:     "6、从不检查系统更新",
-		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update", CheckValue: "AUOptions", Optimized: "1",
-		Basic: false, Deep: true,
-		Optimize: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update", Value: "AUOptions", Vtype: "REG_DWORD", Data: "1"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update", Value: "CachedAUOptions", Vtype: "REG_DWORD", Data: "1"}},
-		Restore: []OptAction{
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update", Value: "AUOptions", Vtype: "REG_DWORD", Data: "4"},
-			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\WindowsUpdate\\Auto Update", Value: "CachedAUOptions", Vtype: "REG_DWORD", Data: "4"}},
+		Name: "6、从不检查系统更新",
+		Guide: "ms-settings:windowsupdate",
+		GuideTip: "用「暂停更新」或「高级选项」自行设定",
+		Basic: false, Deep: false,
 	},
 	{
 		ID: "update-7", Cat: "update", CatName: "更新设置",
@@ -1337,6 +1337,19 @@ var optCatalog = []OptItem{
 			{Kind: "regwrite", Key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Notepad", Value: "ShowStoreBanner", Vtype: "REG_DWORD", Data: "0"}},
 		Restore: []OptAction{
 			{Kind: "regdelete", Key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Notepad", Value: "ShowStoreBanner"}},
+	},
+	{
+		// 2026-11-12 采纳（豆包 27 条对照新增）：对应「设备安装设置→否」。
+		// 与 update-3「Windows更新不包括驱动程序」（组策略键 ExcludeWUDriversInQualityUpdate）是两个不同的键，不重复。
+		ID: "update-8", Cat: "update", CatName: "更新设置",
+		Name:     "8、禁止Windows自动安装硬件驱动",
+		CheckKey: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DriverSearching", CheckValue: "SearchOrderConfig", Optimized: "0",
+		Basic: false, Deep: true,
+		New: true,
+		Optimize: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DriverSearching", Value: "SearchOrderConfig", Vtype: "REG_DWORD", Data: "0"}},
+		Restore: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DriverSearching", Value: "SearchOrderConfig", Vtype: "REG_DWORD", Data: "1"}},
 	},
 	{
 		ID: "yinsi-1", Cat: "yinsi", CatName: "隐私设置",
@@ -1678,5 +1691,17 @@ var optCatalog = []OptItem{
 			{Kind: "regwrite", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Debug Print Filter", Value: "DEFAULT", Vtype: "REG_DWORD", Data: "0"}},
 		Restore: []OptAction{
 			{Kind: "regdelete", Key: "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Debug Print Filter", Value: "DEFAULT"}},
+	},
+	{
+		// 2026-11-12 采纳（豆包 27 条对照新增）：设置→隐私→后台应用 的总开关（Win11 同时管住应用预启动）。
+		ID: "yinsi-35", Cat: "yinsi", CatName: "隐私设置",
+		Name:     "35、禁止UWP应用在后台运行",
+		CheckKey: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", CheckValue: "GlobalUserDisabled", Optimized: "1",
+		Basic: false, Deep: true,
+		New: true,
+		Optimize: []OptAction{
+			{Kind: "regwrite", Key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", Value: "GlobalUserDisabled", Vtype: "REG_DWORD", Data: "1"}},
+		Restore: []OptAction{
+			{Kind: "regdelete", Key: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", Value: "GlobalUserDisabled"}},
 	},
 }
