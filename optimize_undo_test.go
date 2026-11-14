@@ -12,12 +12,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
-// useTempOptUndo 让单测走临时文件，跳过 ProgramData 的 ACL 收紧。
-// 单测通常不是管理员，不能把临时目录改成仅管理员可访问。
+// useTempOptUndo 让单测走临时文件，不碰 ProgramData 的真实快照。
 func useTempOptUndo(t *testing.T) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "optundo.json")
@@ -207,23 +205,6 @@ func TestOptUndoRestoresDeletedKeyTree(t *testing.T) {
 	}
 	if v, ok := testReadDword(t, key, "NewAfterApply"); !ok || v != 9 {
 		t.Fatalf("优化后新写入的值不应被还原删除，实际 %d exists=%v", v, ok)
-	}
-	// 原键允许继承父键权限，还原后不能变成 protected DACL。
-	k, err = registry.OpenKey(registry.CURRENT_USER, parent, registry.READ|regReadControl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sd, err := windows.GetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY, windows.DACL_SECURITY_INFORMATION)
-	k.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	control, _, err := sd.Control()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if control&windows.SE_DACL_PROTECTED != 0 {
-		t.Fatal("原本允许继承的键，还原后不应变成受保护 DACL")
 	}
 }
 

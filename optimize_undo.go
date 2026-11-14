@@ -10,7 +10,7 @@ package main
 //
 // 现在的语义：
 //   · 应用优化前，逐条记录动作会碰到的注册表值 / 整键 / 服务启动类型；
-//   · 快照落在 %LOCALAPPDATA%\3z9wOpt\optundo.json，跨进程、跨重启都还在；
+//   · 快照落在 ProgramData\3z9wOpt\optundo.json，跨进程、跨重启都还在；
 //   · 还原时优先按快照回写；只有找不到快照（旧版本应用过）才退回静态 Restore，
 //     并在结果里带 Warn，明确告诉用户「这是默认值，不是操作前状态」；
 //   · 应用某项时，如果中途失败，用刚拍的快照把这一项已经改过的部分按逆序退回，
@@ -24,19 +24,23 @@ package main
 //   cmd                   → 不保存命令文本；还原时只从内置 optCatalog 取可信命令
 //   shellnotify           → 无状态，记 noop
 //
-// 安全边界（2026-11-09 补）：
-//   快照放在管理员专用目录，但读取时仍按不可信输入处理：
+// 安全边界（2026-11-09 补；2026-11-15 仓库维护方调整存储方案）：
+//   快照按不可信输入处理，逐条与内置 optCatalog 对齐后才执行：
 //     · ID、动作类型、注册表路径、服务名、动作数量必须与内置 optCatalog 匹配；
 //     · cmd 还原命令只从 optCatalog 取，绝不执行文件里的字符串；
-//     · 注册表数据、服务启动类型、整键树都做类型/大小/范围校验。
+//     · 注册表数据、服务启动类型、整键树都做类型/大小/范围校验；
+//     · HMAC-SHA256 完整性校验，密钥由本机 MachineGuid 运行时派生，不落盘。
 //   未通过校验的快照一律拒绝执行，不删除文件，便于用户手动排查。
+//   取舍说明：不再收紧目录/文件 ACL、不在 HKLM 建密钥键、不快照注册表键的
+//   SDDL —— 这些组合行为（提权进程写 HKLM + 变更 ACL）容易被杀毒软件行为
+//   引擎误判。代价是防不住「能读 MachineGuid 又能改快照文件的本地攻击者」；
+//   对本工具的威胁模型（防意外损坏与顺手篡改）已经足够。
 // ============================================================================
 
 import (
 	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -62,8 +66,6 @@ const (
 	optUndoMaxValueSize = 16 << 20 // 单个注册表值上限 16 MB，防止异常值撑爆日志
 	optUndoMaxTreeNodes = 4096     // 整键快照最多 4096 个值/子键
 	optUndoMaxTreeDepth = 16
-	optUndoMaxSDDLLen   = 64 << 10
-	regReadControl      = 0x00020000 // READ_CONTROL，用于读取键的安全描述符
 )
 
 // optUndoEntry 一个优化项的操作前快照。
@@ -99,7 +101,6 @@ type optUndoStep struct {
 }
 
 type optUndoTree struct {
-	SDDL    string             `json:"sddl,omitempty"` // 该键原安全描述符，还原时一并写回
 	Values  []optUndoTreeValue `json:"values,omitempty"`
 	Subkeys []optUndoTreeKey   `json:"subkeys,omitempty"`
 }
@@ -129,7 +130,7 @@ type optUndoService struct {
 type optUndoFile struct {
 	Version int             `json:"version"`
 	Items   []*optUndoEntry `json:"items"`
-	HMAC    string          `json:"hmac,omitempty"` // HMAC-SHA256(Items)，密钥在 HKLM 受保护区域
+	HMAC    string          `json:"hmac,omitempty"` // HMAC-SHA256(Items)，密钥由 MachineGuid 运行时派生
 }
 
 // ---------- 快照采集 ----------
@@ -205,20 +206,16 @@ func captureOptUndoActs(id, name string, acts []OptAction) (*optUndoEntry, error
 
 // ---------- 快照持久化 ----------
 //
-// 快照不能放在 %LOCALAPPDATA%：那是当前用户可写的目录，普通权限进程可以
-// 篡改里面的数据，再借管理员权限的程序把篡改结果写回系统。
-// 这里改放 ProgramData，并在创建时直接带上安全描述符，同时用 HKLM 里的
-// 密钥做 HMAC 完整性校验。目录/文件的所有者必须是 Administrators 或 SYSTEM。
+// 快照放在 ProgramData\3z9wOpt：用 Known Folder API 取真实路径（不信任环境
+// 变量），目录继承 ProgramData 默认 ACL（管理员/SYSTEM 可写、普通用户只读）。
+// 完整性靠 HMAC：密钥每次运行时由本机 MachineGuid 派生，不落盘、不在 HKLM
+// 建键、不收紧 ACL——避免「提权进程写 HKLM + 变更 ACL」这类容易被杀毒软件
+// 行为引擎盯上的组合动作（2026-11-15 仓库维护方调整）。
 
 const (
 	optUndoFileName    = "optundo.json"
 	optUndoMaxFileSize = 16 << 20 // 超过 16 MB 直接拒绝，防止超大 JSON 拖垮提权进程
 	optUndoMaxItems    = 512
-	optUndoDirSDDL     = `O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)`
-	optUndoFileSDDL    = `O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)`
-	optUndoKeySDDL     = `O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)`
-	optUndoHmacKeyRel  = `SOFTWARE\3z9wOpt`
-	optUndoHmacKeyVal  = "UndoHmacKey"
 )
 
 var errOptUndoIncompatible = errors.New("操作前快照版本不兼容")
@@ -226,8 +223,8 @@ var errOptUndoIncompatible = errors.New("操作前快照版本不兼容")
 var (
 	optUndoMu sync.Mutex
 
-	// 测试钩子：单测没有管理员权限，不能改 ProgramData / HKLM 的 ACL。
-	// 生产路径永远走 Known Folder + 安全描述符 + HKLM 密钥。
+	// 测试钩子：单测指定快照文件路径与 HMAC 密钥。
+	// 生产路径永远走 Known Folder + MachineGuid 派生密钥。
 	optUndoPathOverride   string
 	optUndoHmacKeyForTest []byte
 
@@ -237,7 +234,6 @@ var (
 
 	optUndoKeyOnce  sync.Once
 	optUndoKeyBytes []byte
-	optUndoKeyErr   error
 )
 
 func optUndoDir() (string, error) {
@@ -275,95 +271,15 @@ func ensureOptUndoDirOnce() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_ = deletePrivilegesReady() // 幂等开启 SeRestorePrivilege，用于设置所有者
-	sd, err := windows.SecurityDescriptorFromString(optUndoDirSDDL)
-	if err != nil {
-		return "", err
-	}
-	sa := windows.SecurityAttributes{
-		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: sd,
-	}
-	p, err := windows.UTF16PtrFromString(d)
-	if err != nil {
-		return "", err
-	}
-	err = windows.CreateDirectory(p, &sa)
-	if err == nil {
-		if err := verifyOptUndoOwner(d); err != nil {
-			// 创建时带的安全描述符没生效时再补一次，仍不行就拒绝使用。
-			if herr := hardenOptUndoPath(d, optUndoDirSDDL); herr != nil {
-				return "", fmt.Errorf("设置快照目录所有权失败：%w", herr)
-			}
-			if verr := verifyOptUndoOwner(d); verr != nil {
-				return "", verr
-			}
-		}
-		return d, nil
-	}
-	if !errors.Is(err, syscall.ERROR_ALREADY_EXISTS) {
+	// 继承 ProgramData 默认 ACL：管理员/SYSTEM 可写，普通用户只读。
+	if err := os.MkdirAll(d, 0o755); err != nil {
 		return "", fmt.Errorf("创建快照目录失败：%w", err)
 	}
-	// 已存在：先拒绝重解析点，再验证所有者，最后设置所有者/DACL 并复核。
+	// 拒绝重解析点：用户预置的符号链接/目录联接可能把写入重定向到别处。
 	if err := rejectReparsePoint(d); err != nil {
 		return "", fmt.Errorf("快照目录不可信：%w", err)
 	}
-	if err := verifyOptUndoOwner(d); err != nil {
-		return "", fmt.Errorf("快照目录所有权不可信：%w", err)
-	}
-	if err := hardenOptUndoPath(d, optUndoDirSDDL); err != nil {
-		return "", fmt.Errorf("收紧快照目录权限失败：%w", err)
-	}
-	if err := verifyOptUndoOwner(d); err != nil {
-		return "", fmt.Errorf("收紧后快照目录所有权仍不可信：%w", err)
-	}
 	return d, nil
-}
-
-func hardenOptUndoFile(path string) error {
-	return hardenOptUndoPath(path, optUndoFileSDDL)
-}
-
-// hardenOptUndoPath 设置所有者 + 保护 DACL。
-// 只有 Administrators / SYSTEM 能读写，普通用户不能替换快照内容。
-func hardenOptUndoPath(path, sddl string) error {
-	if err := rejectReparsePoint(path); err != nil {
-		return err
-	}
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		return err
-	}
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return err
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		return err
-	}
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		owner, nil, dacl, nil)
-}
-
-func verifyOptUndoOwner(path string) error {
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
-	if err != nil {
-		return err
-	}
-	if sd == nil {
-		return fmt.Errorf("无法读取 %s 的所有者", path)
-	}
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return err
-	}
-	if owner != nil && (owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) ||
-		owner.IsWellKnown(windows.WinLocalSystemSid)) {
-		return nil
-	}
-	return fmt.Errorf("%s 的所有者不是 Administrators/SYSTEM", path)
 }
 
 // rejectReparsePoint 拒绝符号链接/目录联接，避免用户预置一个链接把
@@ -379,61 +295,30 @@ func rejectReparsePoint(path string) error {
 	return nil
 }
 
-func hardenRegKey(k registry.Key, sddl string) error {
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		return err
-	}
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return err
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		return err
-	}
-	return windows.SetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		owner, nil, dacl, nil)
-}
-
 func optUndoHmacKey() ([]byte, error) {
 	if len(optUndoHmacKeyForTest) > 0 {
 		return optUndoHmacKeyForTest, nil
 	}
 	optUndoKeyOnce.Do(func() {
-		optUndoKeyBytes, optUndoKeyErr = loadOptUndoHmacKey()
+		optUndoKeyBytes = deriveOptUndoHmacKey()
 	})
-	return optUndoKeyBytes, optUndoKeyErr
+	return optUndoKeyBytes, nil
 }
 
-func loadOptUndoHmacKey() ([]byte, error) {
-	_ = deletePrivilegesReady()
-	k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, optUndoHmacKeyRel, registry.ALL_ACCESS)
-	if err != nil {
-		return nil, fmt.Errorf("打开 HMAC 密钥键失败：%w", err)
-	}
-	defer k.Close()
-	// 先收紧权限，再读/写密钥值，避免密钥在可读状态下被普通用户拿走。
-	if err := hardenRegKey(k, optUndoKeySDDL); err != nil {
-		return nil, fmt.Errorf("保护 HMAC 密钥键失败：%w", err)
-	}
-	if b, _, err := k.GetBinaryValue(optUndoHmacKeyVal); err == nil {
-		if len(b) != 32 {
-			return nil, fmt.Errorf("HMAC 密钥长度异常：%d", len(b))
+// deriveOptUndoHmacKey 用本机 MachineGuid 派生 HMAC 密钥。
+// 只读现成的 Cryptography\MachineGuid，不在 HKLM 写任何键。
+// 取舍：能读到 MachineGuid 又能改快照文件的本地攻击者可以伪造校验值；
+// 换来的收益是零 HKLM 写入、零 ACL 操作，杀毒软件误报面最小。
+func deriveOptUndoHmacKey() []byte {
+	guid := ""
+	if k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Cryptography`, registry.QUERY_VALUE); err == nil {
+		if s, _, err := k.GetStringValue("MachineGuid"); err == nil {
+			guid = s
 		}
-		return b, nil
-	} else if err != registry.ErrNotExist {
-		return nil, err
+		k.Close()
 	}
-	key := make([]byte, 32)
-	if _, err := rand.Read(key); err != nil {
-		return nil, err
-	}
-	if err := k.SetBinaryValue(optUndoHmacKeyVal, key); err != nil {
-		return nil, err
-	}
-	return key, nil
+	h := sha256.Sum256([]byte("3z9wOpt-optundo-v1\x00" + guid))
+	return h[:]
 }
 
 func optUndoMAC(f *optUndoFile, key []byte) ([]byte, error) {
@@ -496,9 +381,6 @@ func loadOptUndoFile() (*optUndoFile, error) {
 			}
 			if fi.Size() > optUndoMaxFileSize {
 				return nil, fmt.Errorf("操作前快照文件过大（%d 字节）", fi.Size())
-			}
-			if err := hardenOptUndoFile(p); err != nil {
-				return nil, fmt.Errorf("收紧快照文件权限失败：%w", err)
 			}
 		} else if !os.IsNotExist(err) {
 			return nil, err
@@ -580,11 +462,8 @@ func writeOptUndoFile(f *optUndoFile) error {
 		return err
 	}
 	if optUndoPathOverride == "" {
-		// 临时文件与最终文件同目录；目录已经收紧，子文件会继承保护 DACL。
-		// 这里再显式收紧一次，避免文件系统关闭继承时留下可写文件。
-		if err := hardenOptUndoFile(tmp); err != nil {
-			return fmt.Errorf("收紧快照文件权限失败：%w", err)
-		}
+		// 临时文件与最终文件同目录；目录继承 ProgramData 默认 ACL。
+		// 落地前核对最终路径不是重解析点，防止写入被重定向。
 		if _, err := os.Lstat(p); err == nil {
 			if err := rejectReparsePoint(p); err != nil {
 				return err
@@ -866,14 +745,6 @@ func validateUndoTree(tree *optUndoTree, depth int, total *int) error {
 	}
 	if depth > optUndoMaxTreeDepth {
 		return fmt.Errorf("层级过深（>%d）", optUndoMaxTreeDepth)
-	}
-	if tree.SDDL != "" {
-		if len(tree.SDDL) > optUndoMaxSDDLLen {
-			return fmt.Errorf("安全描述符过长")
-		}
-		if _, err := windows.SecurityDescriptorFromString(tree.SDDL); err != nil {
-			return fmt.Errorf("安全描述符非法：%w", err)
-		}
 	}
 	for _, v := range tree.Values {
 		*total = *total + 1
@@ -1355,7 +1226,7 @@ func readRegKeyTree(keyPath string) (bool, *optUndoTree, error) {
 	if err != nil {
 		return false, nil, err
 	}
-	k, err := registry.OpenKey(root, sub, registry.READ|regReadControl)
+	k, err := registry.OpenKey(root, sub, registry.READ)
 	if err == registry.ErrNotExist {
 		return false, nil, nil
 	}
@@ -1375,15 +1246,11 @@ func readKeyTree(k registry.Key, depth int, budget *int) (*optUndoTree, error) {
 	if depth > optUndoMaxTreeDepth {
 		return nil, fmt.Errorf("注册表键层级过深（>%d）", optUndoMaxTreeDepth)
 	}
-	sddl, err := keySDDL(k)
-	if err != nil {
-		return nil, err
-	}
 	names, err := k.ReadValueNames(-1)
 	if err != nil {
 		return nil, err
 	}
-	tree := &optUndoTree{SDDL: sddl}
+	tree := &optUndoTree{}
 	for _, name := range names {
 		*budget = *budget - 1
 		if *budget < 0 {
@@ -1408,7 +1275,7 @@ func readKeyTree(k registry.Key, depth int, budget *int) (*optUndoTree, error) {
 		if *budget < 0 {
 			return nil, fmt.Errorf("注册表键内容超过 %d 项", optUndoMaxTreeNodes)
 		}
-		sk, err := registry.OpenKey(k, name, registry.READ|regReadControl)
+		sk, err := registry.OpenKey(k, name, registry.READ)
 		if err != nil {
 			return nil, err
 		}
@@ -1422,22 +1289,6 @@ func readKeyTree(k registry.Key, depth int, budget *int) (*optUndoTree, error) {
 	return tree, nil
 }
 
-func keySDDL(k registry.Key) (string, error) {
-	sd, err := windows.GetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY,
-		windows.OWNER_SECURITY_INFORMATION|windows.GROUP_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		return "", err
-	}
-	if sd == nil {
-		return "", nil
-	}
-	s := sd.String()
-	if len(s) > optUndoMaxSDDLLen {
-		return "", fmt.Errorf("安全描述符过长")
-	}
-	return s, nil
-}
-
 func restoreRegKeyTree(keyPath string, existed bool, tree *optUndoTree) error {
 	root, sub, err := regRoot(keyPath)
 	if err != nil {
@@ -1448,16 +1299,12 @@ func restoreRegKeyTree(keyPath string, existed bool, tree *optUndoTree) error {
 	if !existed {
 		return nil
 	}
-	_ = deletePrivilegesReady() // 幂等开启 SeRestorePrivilege，还原所有者/组时需要
 	k, _, err := registry.CreateKey(root, sub, registry.ALL_ACCESS)
 	if err != nil {
 		return err
 	}
 	defer k.Close()
-	if err := writeKeyTree(k, tree); err != nil {
-		return err
-	}
-	return restoreKeySDDL(k, tree)
+	return writeKeyTree(k, tree)
 }
 
 func writeKeyTree(k registry.Key, tree *optUndoTree) error {
@@ -1475,50 +1322,12 @@ func writeKeyTree(k registry.Key, tree *optUndoTree) error {
 			return err
 		}
 		err = writeKeyTree(sk, sc.Tree)
-		if err == nil {
-			err = restoreKeySDDL(sk, sc.Tree)
-		}
 		sk.Close()
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func restoreKeySDDL(k registry.Key, tree *optUndoTree) error {
-	if tree == nil || tree.SDDL == "" {
-		return nil
-	}
-	sd, err := windows.SecurityDescriptorFromString(tree.SDDL)
-	if err != nil {
-		return fmt.Errorf("安全描述符无法解析：%w", err)
-	}
-	owner, _, err := sd.Owner()
-	if err != nil {
-		return err
-	}
-	group, _, err := sd.Group()
-	if err != nil {
-		return err
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		return err
-	}
-	// 按快照里的 SE_DACL_PROTECTED 选择继承模式：
-	// 原键允许继承就必须还原成非保护 DACL，不能无条件改成 protected。
-	info := windows.SECURITY_INFORMATION(windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION | windows.DACL_SECURITY_INFORMATION)
-	control, _, err := sd.Control()
-	if err != nil {
-		return err
-	}
-	if control&windows.SE_DACL_PROTECTED != 0 {
-		info |= windows.PROTECTED_DACL_SECURITY_INFORMATION
-	} else {
-		info |= windows.UNPROTECTED_DACL_SECURITY_INFORMATION
-	}
-	return windows.SetSecurityInfo(windows.Handle(k), windows.SE_REGISTRY_KEY, info, owner, group, dacl, nil)
 }
 
 func deleteRegKeyTree(root registry.Key, sub string) error {
