@@ -520,7 +520,7 @@ function optManageModal(){
         + '<div class="opt-mg-t"><span class="opt-mg-n">' + optEsc(it.name)
         +   (cat ? ' <span class="opt-mg-c">' + optEsc(cat) + '</span>' : '') + '</span>'
         +   '<span class="opt-mg-d">' + (u ? ('优化于 ' + optEsc(u.at) + '，还原按操作前快照精确恢复')
-        +      : ('旧版优化 · 无操作前快照，还原后回到系统默认值')) + '</span></div>'
+             : ('旧版优化 · 无操作前快照，还原后回到系统默认值')) + '</span></div>'
         + '<button class="btn sm" data-optmg="' + optEsc(it.id) + '">还原</button>'
         + '</div>';
     }).join('');
