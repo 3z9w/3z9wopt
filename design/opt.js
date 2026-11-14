@@ -216,21 +216,26 @@ window.renderOpt = function(){
   var head = '<div class="page-head" style="margin-bottom:12px">'
     + '<div class="page-title">系统优化</div>'
     + '<div class="page-sub">共 <b>' + c.total + '</b> 项可改，按分类折叠在下面。勾选只是排队，'
-    + '点右下角「应用」才生效；已经生效的项，点它左边的勾就还原。</div></div>';
+    + '点右下角「应用」才生效；想反悔就点上方「管理 / 还原」。</div></div>';
 
-  var hero = '<div class="opt-hero">'
-    + '<div class="opt-hero-fig">' + ico('sliders', 23) + '</div>'
-    + '<div class="opt-kpis">'
-    +   '<div class="opt-kpi"><b>' + c.total + '</b><span>优化项总数</span></div>'
-    +   '<div class="opt-kpi"><b style="color:var(--ok)">' + c.on + '</b><span>已经优化</span></div>'
-    +   '<div class="opt-kpi"><b style="color:var(--info)" id="optSelN">' + sel.length + '</b><span>已勾选待应用</span></div>'
-    + '</div>'
-    + '<div class="opt-hero-r">'
-    +   '<span class="chip">基本预设 ' + c.basic + '</span>'
-    +   '<span class="chip">深度预设 ' + c.deep + '</span>'
-    +   (c.guide ? '<span class="chip">跳转指引 ' + c.guide + '</span>' : '')
-    +   (c.reboot ? '<span class="chip warn">需重启 ' + c.reboot + ' 项</span>' : '')
-    + '</div>'
+  /* 2026-11-15 版式改版：hero 从一整块卡片区压成一条横栏（用户拍板）——
+     左起：已优化 N +「管理 / 还原」按钮（恢复操作主入口，门面常驻）
+     中间：可优化 / 待应用两个数字（纯信息不带卡）
+     右侧收尾：弱化的两个一键勾选预设（带项数），挤到角落不抢主流程。
+     原环形进度在右侧栏 opt-side 里，不动。 */
+  var hero = '<div class="opt-topbar">'
+    + '<div class="opt-kpi-s"><b style="color:var(--ok)">' + c.on + '</b><span>已优化</span></div>'
+    + (c.on ? '<button class="btn sm" id="optManage" title="查看已优化清单，可逐项还原或全部还原">'
+        + ico('grid', 14) + '管理 / 还原</button>' : '')
+    + '<span class="opt-topbar-sep"></span>'
+    + '<div class="opt-kpi-s"><b>' + (c.total - c.on) + '</b><span>可优化</span></div>'
+    + '<div class="opt-kpi-s"><b style="color:var(--info)" id="optSelN">' + sel.length + '</b><span>待应用</span></div>'
+    + '<span class="opt-bar-sp"></span>'
+    + '<span class="opt-topbar-tip">不会选？</span>'
+    + '<button class="btn sm opt-pre" data-optpre="basic" title="把基本预设的 ' + c.basic + ' 项一次性勾上（不直接执行）">'
+    +   ico('bolt', 14) + '一键勾选基本优化（' + c.basic + ' 项）</button>'
+    + '<button class="btn sm opt-pre" data-optpre="deep" title="把深度预设的 ' + c.deep + ' 项一次性勾上（不直接执行）">'
+    +   ico('bolt', 14) + '一键勾选深度优化（' + c.deep + ' 项）</button>'
   + '</div>';
 
   /* 搜索框**独占一整行**：宽度与上面 hero 卡、下面操作条完全一致（用户 2026-10-11 明确要求）。
@@ -279,16 +284,14 @@ window.renderOpt = function(){
     + '</div>') : '';
 
   var bar = '<div class="opt-bar">'
-    /* 文案用「一键勾选」不用「一键执行」：点它只是把该预设的项勾上、放进右栏待确认，
-       不直接改系统（要改还得点右边「应用 N 项」）。2026-10-11 用户定的措辞，别改成"执行"。 */
-    + '<button class="btn sm opt-pre" data-optpre="basic">' + ico('bolt', 14) + '一键勾选基本优化 ' + c.basic + '</button>'
-    + '<button class="btn sm opt-pre" data-optpre="deep">' + ico('bolt', 14) + '一键勾选深度优化 ' + c.deep + '</button>'
+    /* 2026-11-15 改版：底栏只留「清点购物车 → 结账」语义 ——
+       一键勾选预设上移进顶部横栏（带项数标注）；
+       「全部恢复」撤掉，恢复入口统一收进顶部「管理 / 还原」面板。 */
     + '<button class="btn sm" data-optall>' + ico('grid', 14) + '全选</button>'
     + '<button class="btn sm" data-optreset>重置</button>'
     + '<span class="opt-bar-sep"></span>'
     + '<span class="opt-bar-n">已勾选 <b id="optSelN2">' + sel.length + '</b> 项</span>'
     + '<span class="opt-bar-sp"></span>'
-    + (c.on ? '<button class="btn sm" id="optRestoreAll">' + ico('refresh', 14) + '全部恢复 ' + c.on + ' 项</button>' : '')
     + '<button class="btn sm primary" id="optApply"' + (sel.length && !OPT_BUSY ? '' : ' disabled') + '>'
     +   ico('check', 14) + '应用 ' + sel.length + ' 项</button>'
   + '</div>';
@@ -492,6 +495,45 @@ function optOpenGuide(id){
   }).catch(function(e){ toast('打开设置页失败：' + e, 'danger'); });
 }
 
+/* ── 「管理 / 还原」面板（2026-11-15 改版新增） ───────────────────────────
+   顶部横栏的恢复主入口：列出全部已优化项，逐项还原或全部还原。
+   数据 = 前端目录（optimized 标记）+ 后端快照清单（GetOptUndoList，只读）：
+     · 有快照的行显示「优化于 时间」，还原按操作前快照精确恢复；
+     · 没快照的（旧版本优化的）如实标「旧版优化」，还原后回到系统默认值。
+   单项还原仍走 optAskRestoreOne 确认窗（危险操作不省确认）。 */
+function optManageModal(){
+  var rows = OPT.filter(function(i){ return i.optimized; });
+  if(!rows.length){ toast('没有已优化的项', 'info'); return; }
+  var box = document.getElementById('modalBox');
+  if(!box){ optRestoreAll(); return; }
+  callGo('GetOptUndoList').then(function(list){
+    var snap = {};
+    (list || []).forEach(function(u){ snap[u.id] = u; });
+    var items = rows.slice().sort(function(a, b){
+      var ta = snap[a.id] ? snap[a.id].at : '', tb = snap[b.id] ? snap[b.id].at : '';
+      return ta < tb ? 1 : (ta > tb ? -1 : 0);   /* 新拍快照排前面 */
+    });
+    var html = items.map(function(it){
+      var u = snap[it.id];
+      var cat = it.catName || it.cat || '';
+      return '<div class="opt-mg-row">'
+        + '<div class="opt-mg-t"><span class="opt-mg-n">' + optEsc(it.name)
+        +   (cat ? ' <span class="opt-mg-c">' + optEsc(cat) + '</span>' : '') + '</span>'
+        +   '<span class="opt-mg-d">' + (u ? ('优化于 ' + optEsc(u.at) + '，还原按操作前快照精确恢复')
+        +      : ('旧版优化 · 无操作前快照，还原后回到系统默认值')) + '</span></div>'
+        + '<button class="btn sm" data-optmg="' + optEsc(it.id) + '">还原</button>'
+        + '</div>';
+    }).join('');
+    box.innerHTML = '<div class="modal-t">已优化项目（' + items.length + '）</div>'
+      + '<div class="opt-mg-list">' + html + '</div>'
+      + '<div class="modal-f"><button class="btn" id="optCancel">关闭</button>'
+      + '<button class="btn" id="optMgAll">' + ico('refresh', 16) + '全部还原</button></div>';
+    document.getElementById('modal').classList.add('open');
+    document.getElementById('optCancel').onclick = closeModal;
+    document.getElementById('optMgAll').onclick = optRestoreAll;
+  }).catch(function(e){ toast('读取快照清单失败：' + e, 'danger'); });
+}
+
 /* ── 事件绑定 ───────────────────────────────────────────────────────────── */
 /* 一律**事件委托挂在 #content**（只换它的 innerHTML，这个容器本身永不重建）：
    整页 render() 之后按钮还是活的，不需要每次重新绑定 —— 这是本项目定下的做法。 */
@@ -521,6 +563,12 @@ window.bindOpt = function(){
     var gg = t.closest('[data-optguide]');
     if(gg){ optOpenGuide(gg.getAttribute('data-optguide')); return; }
 
+    /* 「管理 / 还原」面板：顶部横栏入口 + 面板里每行的还原按钮。
+       都放在 .opt-row 之前 —— 面板行不是 opt-row，但保险起见先判它。 */
+    if(t.closest('#optManage')){ optManageModal(); return; }
+    var mg = t.closest('[data-optmg]');
+    if(mg){ optAskRestoreOne(mg.getAttribute('data-optmg')); return; }
+
     var row = t.closest('.opt-row');
     if(row){
       var id = row.getAttribute('data-opt'), it = optById(id);
@@ -532,7 +580,6 @@ window.bindOpt = function(){
     }
 
     if(t.closest('#optApply')){ optAskApply(); return; }
-    if(t.closest('#optRestoreAll')){ optRestoreAll(); return; }
     if(t.closest('#optRetry')){ optState = 'loading'; render(); loadOptCatalog(); }
   });
 

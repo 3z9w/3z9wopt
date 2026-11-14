@@ -15,53 +15,27 @@
    不能直接当 SVG stroke 用），取的是与 --sp-grad 同一组品牌色。
    ============================================================================ */
 
-/* ══ 1 概览横幅 ════════════════════════════════════════════════════════════ */
-.opt-hero{
-  position:relative;overflow:hidden;flex:0 0 auto;
-  display:flex;align-items:center;gap:16px;
-  padding:13px 17px;margin-bottom:12px;border-radius:var(--r1);
+/* ══ 1 顶部横栏（2026-11-15 改版：hero 压缩成一条，给下面清单让出视野） ═════ */
+.opt-topbar{
+  position:relative;flex:0 0 auto;display:flex;align-items:center;gap:14px;
+  padding:9px 15px;margin-bottom:12px;border-radius:var(--r1);
   border:1px solid var(--stroke);box-shadow:var(--sh1);
-  background:
-    radial-gradient(520px 190px at 2% -60%, rgba(61,107,245,.16), transparent 62%),
-    radial-gradient(420px 180px at 98% 160%, rgba(34,211,238,.10), transparent 62%),
-    linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
+  background:linear-gradient(120deg,var(--glass) 0%,var(--glass-sink) 100%);
 }
-/* 常驻流光：斜向高光缓慢扫过（跟本机配置页横幅一个手法，强度分主题 —— 同一片 50% 白
-   在浅底上只是「亮了一道」，在深底上会变成一条白带横在文字上）。 */
-.opt-hero::after{
-  content:"";position:absolute;top:-60%;left:-70%;width:34%;height:220%;
-  pointer-events:none;z-index:0;transform:rotate(12deg);
-  background:linear-gradient(100deg,transparent,rgba(255,255,255,.16) 45%,transparent);
-  animation:opt-sweep 8.5s linear infinite;
-}
-html[data-theme="light"] .opt-hero::after{
-  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5) 45%,transparent);
-}
-@keyframes opt-sweep{0%{left:-70%}58%,100%{left:130%}}
-html[data-motion="off"] .opt-hero::after{animation:none;opacity:0}
+.opt-kpi-s{display:flex;align-items:baseline;gap:6px;min-width:0;white-space:nowrap}
+.opt-kpi-s b{font-size:20px;font-weight:680;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
+.opt-kpi-s span{font-size:11.5px;color:var(--tx3)}
+.opt-topbar-sep{width:1px;height:18px;background:var(--stroke);flex:0 0 auto}
+.opt-topbar-tip{font-size:11.5px;color:var(--tx3);white-space:nowrap}
 
-/* 圆形图标 + 一圈缓慢环绕的高光弧（科技感都在这，别加更多动效了） */
-.opt-hero-fig{
-  position:relative;z-index:1;flex:0 0 auto;width:52px;height:52px;border-radius:50%;
-  display:grid;place-items:center;color:var(--info);
-  background:var(--glass-hi);border:1px solid var(--stroke-2);
-}
-.opt-hero-fig::before{
-  content:"";position:absolute;inset:-2px;border-radius:50%;
-  background:conic-gradient(from 0deg,transparent 0 60%,rgba(96,165,250,.95) 76%,transparent 90% 100%);
-  -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));
-          mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1px));
-  animation:opt-orbit 6.5s linear infinite;
-}
-@keyframes opt-orbit{to{transform:rotate(360deg)}}
-html[data-motion="off"] .opt-hero-fig::before{animation:none;opacity:0}
-
-.opt-kpis{position:relative;z-index:1;display:flex;align-items:center;gap:18px;min-width:0;flex:0 1 auto}
-.opt-kpi{display:flex;flex-direction:column;min-width:0}
-.opt-kpi + .opt-kpi{border-left:1px solid var(--stroke);padding-left:18px}
-.opt-kpi b{font-size:20px;font-weight:680;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:tabular-nums}
-.opt-kpi span{font-size:11.5px;color:var(--tx3);margin-top:2px;white-space:nowrap}
-.opt-hero-r{position:relative;z-index:1;margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+/* 「管理 / 还原」面板（顶部横栏入口弹出的已优化清单） */
+.opt-mg-list{max-height:min(52vh,420px);overflow:auto;margin:4px 0 10px}
+.opt-mg-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--stroke)}
+.opt-mg-row:last-child{border-bottom:0}
+.opt-mg-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.opt-mg-n{font-size:13px;color:var(--tx1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.opt-mg-c{font-size:11px;color:var(--tx3)}
+.opt-mg-d{font-size:11.5px;color:var(--tx3)}
 
 /* ══ 2 工具条：搜索 + 预设筛选 ═════════════════════════════════════════════ */
 /* 搜索框独占一行（宽度 = 上方 hero 卡 = 下方操作条，三者在 .page 的 stretch 下天然同宽） */

@@ -508,6 +508,33 @@ func (a *App) ApplyOptimize(ids []string) []OptResult { return a.runOptimize(ids
 // RestoreOptimize 按 ID 还原优化项（每项都有自己的还原动作，逐项可撤销）
 func (a *App) RestoreOptimize(ids []string) []OptResult { return a.runOptimize(ids, true) }
 
+// OptUndoListItem 「管理 / 还原」面板的清单行（只读快照信息）。
+type OptUndoListItem struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	At   string `json:"at"`
+}
+
+// GetOptUndoList 返回操作前快照清单（哪些项有快照、何时拍的），只读、不改文件。
+// 前端拿它区分「可按操作前快照精确还原」和「旧版优化（无快照）」。
+// 快照文件读不出来时返回空表而不是报错 —— 面板照常打开，已优化项全部按旧版标注。
+func (a *App) GetOptUndoList() []OptUndoListItem {
+	optUndoMu.Lock()
+	defer optUndoMu.Unlock()
+	f, err := loadOptUndoFile()
+	if err != nil || f == nil {
+		return []OptUndoListItem{}
+	}
+	out := make([]OptUndoListItem, 0, len(f.Items))
+	for _, x := range f.Items {
+		if x == nil {
+			continue
+		}
+		out = append(out, OptUndoListItem{ID: x.ID, Name: x.Name, At: x.At})
+	}
+	return out
+}
+
 // ---------- 跳转指引（2026-11-12 误报治理第二批） ----------
 //
 // 关防护类高危项不再由本工具代改注册表（静态扫描一票否决），改成「去设置」直达：
