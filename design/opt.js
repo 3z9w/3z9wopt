@@ -400,7 +400,7 @@ function optAskApply(){
       }
       OPT_BUSY = null; OPT_SEL = {};
       toast('已应用 ' + ok + ' / ' + ids.length + ' 项' + tail, bad.length ? 'warn' : 'ok');
-      loadOptCatalog();
+      loadOptCatalog(); loadOpLog();
     }).catch(function(e){
       OPT_BUSY = null;
       toast('应用失败：' + e, 'danger');
@@ -432,7 +432,7 @@ function optAskRestoreOne(id){
         ? ('已还原：' + it.name + (r.warn ? '（' + r.warn + '）' : ''))
         : ('还原失败：' + (r.err || '未知原因'));
       toast(msg, r.ok ? 'ok' : 'danger');
-      loadOptCatalog();
+      loadOptCatalog(); loadOpLog();
     }).catch(function(e){ toast('还原失败：' + e, 'danger'); });
   };
   if(!box){ doIt(); return; }
@@ -464,7 +464,7 @@ function optRestoreAll(){
       toast('已恢复 ' + ok + ' / ' + ids.length + ' 项'
             + (warn ? ('，其中 ' + warn + ' 项存在还原提示') : ''),
             ok === ids.length ? 'ok' : 'warn');
-      loadOptCatalog();
+      loadOptCatalog(); loadOpLog();
     }).catch(function(e){
       OPT_BUSY = null;
       toast('恢复失败：' + e, 'danger');
