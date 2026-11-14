@@ -54,7 +54,7 @@ set "GOARCH=amd64"
 rem Version is defined ONCE here. It means "feature set" - bump it only
 rem when you decide to announce a new release. Bug fixes and UI tweaks
 rem just get a new build number from tools/relgen.
-set "APPVER=1.2.0"
+set "APPVER=1.2.1"
 
 rem ---- args: release = publishable build; quiet = automation, no pause ----
 set "MODE=dev"

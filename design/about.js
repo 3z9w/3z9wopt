@@ -94,7 +94,7 @@ window.renderAboutPane = renderAboutPane;
 
 function abBodyHtml(){
   var a = AB.info || {};
-  var ver = a.version || 'v1.2.0';
+  var ver = a.version || 'v1.2.1';
   var bd = (a.buildDate && a.buildDate !== 'unknown') ? a.buildDate : '';
   /* 构建号（20261019.2）比日期精确：同一天可能发好几次，日期分不出来。
      有构建号就用它，没有（日常构建）才退回日期。 */

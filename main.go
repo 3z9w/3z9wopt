@@ -115,8 +115,8 @@ var setpanelCSS []byte
 
 // designPage 把真源页面的标题换成软件名（原型文件里保留「UI 原型」标题，便于浏览器预览辨认）。
 var designPage = bytes.Replace(pageHTML,
-	[]byte("<title>3z9wOpt v1.2.0 · UI 原型</title>"),
-	[]byte("<title>无名大叔系统优化工具箱 v1.2.0</title>"), 1)
+	[]byte("<title>3z9wOpt v1.2.1 · UI 原型</title>"),
+	[]byte("<title>无名大叔系统优化工具箱 v1.2.1</title>"), 1)
 
 // serveDesignPage 让 "/" 与 "/index.html" 直接返回真源页面。
 // 必须挂在 Wails 资产服务器的 Middleware 里：Wails 会在它之外再包一层，
@@ -229,25 +229,25 @@ func noCache(next http.Handler) http.Handler {
 	})
 }
 
-/* devPage 开发/验收用：3z9wOpt_v1.2.0.exe -devpage <页面id> 启动后直接跳到那一页。
+/* devPage 开发/验收用：3z9wOpt_v1.2.1.exe -devpage <页面id> 启动后直接跳到那一页。
    为什么需要：GUI 截图验收如果靠"点侧栏坐标"，会被侧栏滚动位置影响（同一坐标这次点到这里、
    下次点到别处，2026-10-10 实测踩过两次）。有了这个开关，验证任意一页都是确定性的：
-       bin\3z9wOpt_v1.2.0.exe -devpage driver   然后截图即可。
+       bin\3z9wOpt_v1.2.1.exe -devpage driver   然后截图即可。
    只接受简单的页面 id（字母数字连字符下划线），拼进 JS 前还会再过滤一次。 */
 var devPage string
 
 /* devTab 本机配置页要逐个 Tab 截图验收（2026-10-10 加）。
    这一页有 8 个 Tab，Tab 切换是局部的（不整页重绘），
    用「启动后点某个坐标」或注入脚本切都靠不住 —— 时序一差就截到空白页。
-   做成确定性开关：bin\3z9wOpt_v1.2.0.exe -devpage pcinfo -devtab disk
+   做成确定性开关：bin\3z9wOpt_v1.2.1.exe -devpage pcinfo -devtab disk
    它在 go('pcinfo') 之后、稳定 800ms 才点目标 Tab，截图必然落在目标 Tab 上。 */
 var devTab string
 
 /* devMeasure 开发期测量浮层开关（2026-10-10 加）。
    为什么要单独一个开关：本机配置页要求「一屏装完」，验收时想读到精确的
    溢出像素；但给用户看的截图不该带那块红框。所以拆开：
-     bin\3z9wOpt_v1.2.0.exe -devpage pcinfo -devtab disk              → 干净截图
-     bin\3z9wOpt_v1.2.0.exe -devpage pcinfo -devtab disk -devmeasure  → 带读数 */
+     bin\3z9wOpt_v1.2.1.exe -devpage pcinfo -devtab disk              → 干净截图
+     bin\3z9wOpt_v1.2.1.exe -devpage pcinfo -devtab disk -devmeasure  → 带读数 */
 var devMeasure = false
 
 // parseDevPage 从命令行取 -devpage <id> 与 -devtab <id>。
@@ -362,7 +362,7 @@ func logDev(s string) {
 /* 版本信息：由构建时注入，源码里不写死 —— 开源后别人 clone 构建，显示的是他们自己的信息。
 
    ── 两级版本（2026-10-19 定）──────────────────────────────────────────
-   ① appVersion 版本号 1.2.0：只表示「功能集合」。攒够一批要对外宣布时才改，
+   ① appVersion 版本号 1.2.1：只表示「功能集合」。攒够一批要对外宣布时才改，
       改一个 bug 重建发布**不用**动它。
    ② buildNum  构建号 20261019.2：日期 + 当天序号，每次发布自动生成、永不复用。
       它是「同版本号下第几次发」，更新判断和官方指纹都靠它区分。
@@ -373,12 +373,12 @@ func logDev(s string) {
 
    正式构建（build.cmd release，自动化生成三个 -X）：
      go build -tags desktop,production -ldflags "-s -w -H windowsgui ^
-       -X main.appVersion=1.2.0 -X main.buildDate=2026-11-12 ^
-       -X main.buildNum=20261112.1" -o bin\3z9wOpt_v1.2.0.exe .
+       -X main.appVersion=1.2.1 -X main.buildDate=2026-11-12 ^
+       -X main.buildNum=20261112.1" -o bin\3z9wOpt_v1.2.1.exe .
    ⚠️ appVersion 与 buildDate 必须**一起**注入：只给版本不给日期，关于页会显示「构建 unknown」。
-   不带 -X（含 build.cmd 的日常构建）显示 1.2.0-dev / unknown，且不参与更新与指纹校验。 */
+   不带 -X（含 build.cmd 的日常构建）显示 1.2.1-dev / unknown，且不参与更新与指纹校验。 */
 var (
-	appVersion = "1.2.0-dev"
+	appVersion = "1.2.1-dev"
 	buildDate  = "unknown"
 	buildNum   = "" // 构建号 YYYYMMDD.N；只有发布构建才注入，日常构建为空
 )
@@ -433,8 +433,8 @@ func main() {
 
 // runCliSelfCheck 命令行自检：与 GUI 共用同一套后端，打印真机扫描结果。
 //
-//	3z9wOpt_v1.2.0.exe -cli           全量自检（含 deepjunk 全盘遍历，约十几秒到几分钟）
-//	3z9wOpt_v1.2.0.exe -cli -nofull   跳过 deepjunk，快速迭代用
+//	3z9wOpt_v1.2.1.exe -cli           全量自检（含 deepjunk 全盘遍历，约十几秒到几分钟）
+//	3z9wOpt_v1.2.1.exe -cli -nofull   跳过 deepjunk，快速迭代用
 //
 // 另把每项明细写到 %TEMP%\3z9wOpt_cli_items.tsv，便于逐项对照"总量是哪一项抬起来的"。
 func runCliSelfCheck(args []string) {
