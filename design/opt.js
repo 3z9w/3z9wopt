@@ -215,8 +215,7 @@ window.renderOpt = function(){
 
   var head = '<div class="page-head" style="margin-bottom:12px">'
     + '<div class="page-title">系统优化</div>'
-    + '<div class="page-sub">共 <b>' + c.total + '</b> 项可改，按分类折叠在下面。勾选只是排队，'
-    + '点右下角「应用」才生效；想反悔就点上方「管理 / 还原」。</div></div>';
+    + '<div class="page-sub">共 <b>' + c.total + '</b> 项优化项，展开分类可查看具体优化项。勾选后点右下角「应用」才生效。</div></div>';
 
   /* 2026-11-15 版式改版：hero 从一整块卡片区压成一条横栏（用户拍板）——
      左起：已优化 N +「管理 / 还原」按钮（恢复操作主入口，门面常驻）
@@ -225,7 +224,7 @@ window.renderOpt = function(){
      原环形进度在右侧栏 opt-side 里，不动。 */
   var hero = '<div class="opt-topbar">'
     + '<div class="opt-kpi-s"><b style="color:var(--ok)">' + c.on + '</b><span>已优化</span></div>'
-    + (c.on ? '<button class="btn sm" id="optManage" title="查看已优化清单，可逐项还原或全部还原">'
+    + (c.on ? '<button class="btn sm primary" id="optManage" title="查看已优化清单，可逐项还原或全部还原">'
         + ico('grid', 14) + '管理 / 还原</button>' : '')
     + '<span class="opt-topbar-sep"></span>'
     + '<div class="opt-kpi-s"><b>' + (c.total - c.on) + '</b><span>可优化</span></div>'

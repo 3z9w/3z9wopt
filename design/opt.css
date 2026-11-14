@@ -28,6 +28,14 @@
 .opt-topbar-sep{width:1px;height:18px;background:var(--stroke);flex:0 0 auto}
 .opt-topbar-tip{font-size:11.5px;color:var(--tx3);white-space:nowrap}
 
+/* 弱化的一键勾选预设按钮：比普通 btn 更轻（无底色、低透明度），悬停才恢复到常规强度 ——
+   2026-11-15 用户定调：预设是辅助入口，视觉重量必须低于「管理 / 还原」（primary）。 */
+.opt-topbar .opt-pre{
+  background:transparent;border-color:transparent;color:var(--tx3);opacity:.78;
+}
+.opt-topbar .opt-pre:hover{opacity:1;border-color:var(--stroke);color:var(--tx2)}
+.opt-topbar .opt-pre svg{opacity:.7}
+
 /* 「管理 / 还原」面板（顶部横栏入口弹出的已优化清单） */
 .opt-mg-list{max-height:min(52vh,420px);overflow:auto;margin:4px 0 10px}
 .opt-mg-row{display:flex;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid var(--stroke)}
