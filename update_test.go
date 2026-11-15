@@ -52,6 +52,11 @@ func TestManifestValidate(t *testing.T) {
 		{Version: "1.2.0", SHA256: sha},                // 没下载地址
 		{Version: "1.2.0", URL: ok.URL},                // 没指纹
 		{Version: "1.2.0", URL: ok.URL, SHA256: "abc"}, // 指纹长度不对
+		// 64 位但不是十六进制：长度检查会放过，实际永远对不上文件
+		{Version: "1.2.0", URL: ok.URL, SHA256: strings.Repeat("x", 64)},
+		// 明文 http：SHA256 只能证明"下载到的文件跟清单一致"，证明不了清单没被换
+		{Version: "1.2.0", URL: "http://opt.3z9w.com/download/x.exe", SHA256: sha},
+		{Version: "1.2.0", URL: "https:///download/x.exe", SHA256: sha}, // 没主机名
 	}
 	for i, m := range bad {
 		if err := m.validate(); err == nil {
@@ -115,17 +120,28 @@ func TestOfficialEntries(t *testing.T) {
 	if g := officialEntries(m, "1.0.0"); len(g) != 0 {
 		t.Errorf("没有记录的版本应该返回空，拿到 %+v", g)
 	}
-	// 记了但指纹是坏的 → 同样算"没法核对"，不能拿去比对
-	m2 := updateManifest{Version: "1.2.0", SHA256: "short", History: []updateOldFile{{Version: "1.1.0", SHA256: "x"}}}
+	// 记了但指纹是坏的 → 同样算"没法核对"，不能拿去比对。
+	// 注意第三条不是长度问题：64 个 "x" 长度对，但不是合法十六进制。
+	m2 := updateManifest{Version: "1.2.0", SHA256: strings.Repeat("x", 64), History: []updateOldFile{
+		{Version: "1.1.0", SHA256: "x"},
+		{Version: "1.0.0", SHA256: strings.Repeat("x", 64)},
+	}}
+	if g := officialEntries(m2, "1.2.0"); len(g) != 0 {
+		t.Errorf("64 位非十六进制指纹不该被当成官方值，拿到 %+v", g)
+	}
 	if g := officialEntries(m2, "1.1.0"); len(g) != 0 {
-		t.Errorf("坏指纹不该被当成官方值，拿到 %+v", g)
+		t.Errorf("短指纹不该被当成官方值，拿到 %+v", g)
+	}
+	if g := officialEntries(m2, "1.0.0"); len(g) != 0 {
+		t.Errorf("64 位非十六进制指纹不该被当成官方值，拿到 %+v", g)
 	}
 }
 
-// 起一个假服务器当发布站，把清单和包都放上去
+// 起一个假服务器当发布站，把清单和包都放上去。
+// 必须用 TLS：清单 URL 强制 https，明文服务会被 validate 拒掉。
 func fakeServer(t *testing.T, m updateManifest, pkg []byte, pkgPath string) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/version.json":
 			w.Header().Set("Content-Type", "application/json")
@@ -140,11 +156,15 @@ func fakeServer(t *testing.T, m updateManifest, pkg []byte, pkgPath string) *htt
 	return srv
 }
 
+// 让被测代码连到假服务器：地址和客户端要一起换，
+// 否则默认客户端不信任 httptest 的自签证书。
 func useFakeServer(t *testing.T, srv *httptest.Server) {
 	t.Helper()
 	updateManifestURLOverride = srv.URL + "/version.json"
+	updateHTTPClientOverride = srv.Client()
 	t.Cleanup(func() {
 		updateManifestURLOverride = ""
+		updateHTTPClientOverride = nil
 	})
 }
 
@@ -173,12 +193,22 @@ func TestCheckUpdateStates(t *testing.T) {
 		t.Error("badmanifest 必须带可读原因")
 	}
 
+	/* ①b 清单 sha256 是 64 位假值 → badmanifest。
+	   回归点：以前只数长度，64 个 "x" 也会被当成合法指纹。 */
+	srvBad := fakeServer(t, updateManifest{
+		Version: "9.9.9", URL: srv.URL + "/dl.exe", SHA256: strings.Repeat("x", 64),
+	}, pkg, "/dl.exe")
+	useFakeServer(t, srvBad)
+	if r := a.CheckUpdate(); r.State != "badmanifest" {
+		t.Errorf("64 位非十六进制指纹应该判 badmanifest，拿到 %q（%s）", r.State, r.Message)
+	}
+
 	// ② 完整清单 + 服务器版本更高 → new
 	srv2 := fakeServer(t, updateManifest{
 		Version: "9.9.9", BuildDate: "2026-11-01", Notes: []string{"新东西"},
 		URL: srv.URL + "/dl.exe", SHA256: sha,
 	}, pkg, "/dl.exe")
-	updateManifestURLOverride = srv2.URL + "/version.json"
+	useFakeServer(t, srv2)
 	r = a.CheckUpdate()
 	if r.State != "new" || r.Latest != "9.9.9" {
 		t.Errorf("应该判 new / 9.9.9，拿到 %q / %q（%s）", r.State, r.Latest, r.Message)
@@ -191,7 +221,7 @@ func TestCheckUpdateStates(t *testing.T) {
 	srv3 := fakeServer(t, updateManifest{
 		Version: appVersion, URL: srv.URL + "/dl.exe", SHA256: sha,
 	}, pkg, "/dl.exe")
-	updateManifestURLOverride = srv3.URL + "/version.json"
+	useFakeServer(t, srv3)
 	if r := a.CheckUpdate(); r.State != "latest" {
 		t.Errorf("同版本应该判 latest，拿到 %q", r.State)
 	}
@@ -204,7 +234,7 @@ func TestCheckUpdateStates(t *testing.T) {
 	srv3b := fakeServer(t, updateManifest{
 		Version: appVersion, Build: "20261019.2", URL: srv.URL + "/dl.exe", SHA256: sha,
 	}, pkg, "/dl.exe")
-	updateManifestURLOverride = srv3b.URL + "/version.json"
+	useFakeServer(t, srv3b)
 	if r := a.CheckUpdate(); r.State != "new" {
 		t.Errorf("同版本号但构建号更新，应该判 new，拿到 %q", r.State)
 	}
@@ -213,7 +243,7 @@ func TestCheckUpdateStates(t *testing.T) {
 	srv3c := fakeServer(t, updateManifest{
 		Version: appVersion, URL: srv.URL + "/dl.exe", SHA256: sha,
 	}, pkg, "/dl.exe")
-	updateManifestURLOverride = srv3c.URL + "/version.json"
+	useFakeServer(t, srv3c)
 	if r := a.CheckUpdate(); r.State != "latest" {
 		t.Errorf("老格式清单（无 build）应该判 latest，拿到 %q", r.State)
 	}
@@ -228,18 +258,18 @@ func TestCheckUpdateStates(t *testing.T) {
 	   → 必须判 new。否则版本号一样、它又没有号，永远收不到更新，
 	   等于把这批人永久钉在旧二进制上。 */
 	buildNum = ""
-	updateManifestURLOverride = srv3b.URL + "/version.json"
+	useFakeServer(t, srv3b)
 	if r := a.CheckUpdate(); r.State != "new" {
 		t.Errorf("本机没有构建号时应该判 new，拿到 %q", r.State)
 	}
 	buildNum = oldBuild
 
 	// ④ 服务器 500 / 连不上 → offline，而且不许写成"已是最新"
-	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dead := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 	}))
 	defer dead.Close()
-	updateManifestURLOverride = dead.URL + "/version.json"
+	useFakeServer(t, dead)
 	r = a.CheckUpdate()
 	if r.State != "offline" {
 		t.Errorf("服务器出错应该判 offline，拿到 %q", r.State)
@@ -273,17 +303,18 @@ func TestVerifySelfStates(t *testing.T) {
 		t.Fatal("测试前提不成立")
 	}
 	a := NewApp()
+	const dlURL = "https://opt.3z9w.com/dl/3z9wOpt.zip"
 
 	// ① 清单里就是这个版本、指纹也对 → ok
-	srv := fakeServer(t, updateManifest{Version: "1.1.0", SHA256: mine}, nil, "/none")
+	srv := fakeServer(t, updateManifest{Version: "1.1.0", URL: dlURL, SHA256: mine}, nil, "/none")
 	useFakeServer(t, srv)
 	if r := a.VerifySelf(); r.State != "ok" {
 		t.Errorf("指纹一致应该判 ok，拿到 %q（%s）", r.State, r.Message)
 	}
 
 	// ② 指纹不一样 → mismatch，且必须把两个值都给出来
-	srv2 := fakeServer(t, updateManifest{Version: "1.1.0", SHA256: other}, nil, "/none")
-	updateManifestURLOverride = srv2.URL + "/version.json"
+	srv2 := fakeServer(t, updateManifest{Version: "1.1.0", URL: dlURL, SHA256: other}, nil, "/none")
+	useFakeServer(t, srv2)
 	r := a.VerifySelf()
 	if r.State != "mismatch" {
 		t.Errorf("指纹不同应该判 mismatch，拿到 %q", r.State)
@@ -294,20 +325,20 @@ func TestVerifySelfStates(t *testing.T) {
 
 	// ③ 服务器没记这个版本 → unknown（不是 mismatch）
 	srv3 := fakeServer(t, updateManifest{
-		Version: "1.2.0", SHA256: other,
+		Version: "1.2.0", URL: dlURL, SHA256: other,
 		History: []updateOldFile{{Version: "1.0.0", SHA256: other}},
 	}, nil, "/none")
-	updateManifestURLOverride = srv3.URL + "/version.json"
+	useFakeServer(t, srv3)
 	if r := a.VerifySelf(); r.State != "unknown" {
 		t.Errorf("服务器没记录应该判 unknown，拿到 %q（%s）", r.State, r.Message)
 	}
 
 	// ④ 老版本走 history 也能对得上 → ok
 	srv4 := fakeServer(t, updateManifest{
-		Version: "1.2.0", SHA256: other,
+		Version: "1.2.0", URL: dlURL, SHA256: other,
 		History: []updateOldFile{{Version: "1.1.0", SHA256: mine}},
 	}, nil, "/none")
-	updateManifestURLOverride = srv4.URL + "/version.json"
+	useFakeServer(t, srv4)
 	if r := a.VerifySelf(); r.State != "ok" {
 		t.Errorf("history 里能对上应该判 ok，拿到 %q（%s）", r.State, r.Message)
 	}
@@ -316,25 +347,39 @@ func TestVerifySelfStates(t *testing.T) {
 	   新版指纹排在前面，老用户手上是上一次构建的，仍然必须判 ok ——
 	   不能因为"清单里最新那条不是他这份"就报"被改过"。 */
 	srv4b := fakeServer(t, updateManifest{
-		Version: "1.1.0", Build: "20261019.2", SHA256: other,
+		Version: "1.1.0", Build: "20261019.2", URL: dlURL, SHA256: other,
 		History: []updateOldFile{
 			{Version: "1.1.0", Build: "20261019.1", SHA256: mine},
 			{Version: "1.0.0", Build: "20261009.1", SHA256: other},
 		},
 	}, nil, "/none")
-	updateManifestURLOverride = srv4b.URL + "/version.json"
+	useFakeServer(t, srv4b)
 	if r := a.VerifySelf(); r.State != "ok" {
 		t.Errorf("同版本号的上一次构建也应该判 ok，拿到 %q（%s）", r.State, r.Message)
 	}
 
 	// ⑤ 连不上 → offline，绝不写成 mismatch
-	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	dead := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 	}))
 	defer dead.Close()
-	updateManifestURLOverride = dead.URL + "/version.json"
+	useFakeServer(t, dead)
 	if r := a.VerifySelf(); r.State != "offline" {
 		t.Errorf("服务器出错应该判 offline，拿到 %q", r.State)
+	}
+
+	/* ⑥ 清单里的指纹是 64 位假值（不是十六进制）→ unknown，不是 mismatch。
+	   回归点：以前只数长度，这种值会被当成官方指纹，把本机文件判成「被改过」。 */
+	srv5 := fakeServer(t, updateManifest{
+		Version: "1.1.0", URL: dlURL, SHA256: strings.Repeat("x", 64),
+	}, nil, "/none")
+	useFakeServer(t, srv5)
+	r = a.VerifySelf()
+	if r.State != "unknown" {
+		t.Errorf("损坏清单应该判 unknown（没法核对），拿到 %q（%s）", r.State, r.Message)
+	}
+	if r.State == "mismatch" {
+		t.Error("损坏清单绝不能判 mismatch：那等于说用户文件被改过")
 	}
 }
 

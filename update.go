@@ -36,6 +36,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,11 +48,13 @@ import (
 const updateManifestURL = "https://opt.3z9w.com/version.json"
 
 /*
-单测专用开关（项目里同样的做法见 blockedStoreOverride）：
+单测专用开关：
 单测要能起本地 httptest 服务把检查 / 失败路径全跑一遍。
+清单地址强制 https，单测服务用自签证书，所以要能换掉默认 http.Client。
 */
 var (
-	updateManifestURLOverride string // 非空则用它代替正式清单地址
+	updateManifestURLOverride string       // 非空则用它代替正式清单地址
+	updateHTTPClientOverride  *http.Client // 非空则用它拉清单（单测用 httptest 的客户端信任自签证书）
 )
 
 func manifestURL() string {
@@ -218,6 +221,9 @@ func fetchManifest() (updateManifest, error) {
 	req.Header.Set("Cache-Control", "no-cache")
 
 	cli := &http.Client{Timeout: updateHTTPTimeout}
+	if updateHTTPClientOverride != nil {
+		cli = updateHTTPClientOverride
+	}
 	resp, err := cli.Do(req)
 	if err != nil {
 		return m, errors.New("连不上更新服务器，检查一下网络（" + trimErr(err) + "）")
@@ -244,6 +250,37 @@ func trimErr(err error) string {
 	return s
 }
 
+/*
+validSHA256 判断清单里的指纹能不能用来核对文件。
+
+	只数长度不够：64 个 "x" 同样过得了 len == 64，却永远对不上任何文件。
+	解码后再确认是 32 字节，才算合法的 SHA256。
+*/
+func validSHA256(s string) bool {
+	b, err := hex.DecodeString(strings.TrimSpace(s))
+	return err == nil && len(b) == sha256.Size
+}
+
+/*
+validateDownloadURL 校验更新包地址。
+
+	必须是 https 且带主机名。清单里的 SHA256 只能证明「下载到的文件跟清单一致」，
+	证明不了「清单本身没被途中替换」；只有 https 能守住后一半。
+*/
+func validateDownloadURL(raw string) error {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return errors.New("更新清单里的 url 不是合法地址")
+	}
+	if u.Scheme != "https" {
+		return errors.New("更新清单里的 url 必须是 https 地址")
+	}
+	if u.Hostname() == "" {
+		return errors.New("更新清单里的 url 没有主机名")
+	}
+	return nil
+}
+
 // 清单自检：缺哪一项都别往下走，否则会拿半份配置去下载/校验
 func (m updateManifest) validate() error {
 	if strings.TrimSpace(m.Version) == "" {
@@ -252,8 +289,11 @@ func (m updateManifest) validate() error {
 	if strings.TrimSpace(m.URL) == "" {
 		return errors.New("更新清单里没有 url 字段")
 	}
-	if len(strings.TrimSpace(m.SHA256)) != 64 {
-		return errors.New("更新清单里的 sha256 不是 64 位（应该填更新包的完整 SHA256）")
+	if err := validateDownloadURL(m.URL); err != nil {
+		return err
+	}
+	if !validSHA256(m.SHA256) {
+		return errors.New("更新清单里的 sha256 不是合法的 64 位十六进制（应该填更新包的完整 SHA256）")
 	}
 	// build 可空（老清单），但填了就必须是 YYYYMMDD.N，否则同版本重建的先后判断会失效
 	if strings.TrimSpace(m.Build) != "" {
@@ -393,7 +433,7 @@ func officialEntries(m updateManifest, ver string) []updateOldFile {
 	var out []updateOldFile
 	add := func(v, b, h string, size int64) {
 		h = strings.ToLower(strings.TrimSpace(h))
-		if len(h) != 64 {
+		if !validSHA256(h) {
 			return // 坏指纹不能当官方值，也不能参与"有没有记录"的判断
 		}
 		out = append(out, updateOldFile{Version: v, Build: b, SHA256: h, Size: size})
@@ -457,6 +497,13 @@ func (a *App) VerifySelf() VerifyResult {
 	if err != nil {
 		out.State = "offline"
 		out.Message = err.Error()
+		return out
+	}
+	// 坏清单不能拿来当官方指纹：否则一条 64 位的假值会被解释成 mismatch，
+	// 把本来无法核实的文件说成「被改过」。跟 CheckUpdate 用同一套规则。
+	if err := m.validate(); err != nil {
+		out.State = "unknown"
+		out.Message = "更新清单不合法，无法核对：" + err.Error()
 		return out
 	}
 
