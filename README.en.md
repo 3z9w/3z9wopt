@@ -139,7 +139,7 @@ No internet, printer won't print, update won't install, Windows won't boot — t
 
 ## Screenshots
 
-Taken from v1.1.0; light and dark themes both available.
+Taken from v1.2.0; light and dark themes both available.
 
 | Overview | Hardware info |
 | --- | --- |
